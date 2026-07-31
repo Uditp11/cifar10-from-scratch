@@ -74,3 +74,38 @@ Any deviation from `ARCHITECTURE.md`, any added dependency, and any decision tha
 **Alternatives.** Keep `device: cpu` as the safe default (rejected: silently wastes GPU time, the failure mode this exists to prevent). Require `device` to always be explicit with no `"auto"` (rejected: pushes a resolution the machine can answer onto every operator, every time).
 
 **Consequences.** Two configs with identical explicit settings but different hardware can now resolve to different `Config.device` values — `config_hash` is unaffected since hashing happens after resolution and hardware-driven runs are expected to differ. Code that inspects `cfg.device` never sees `"auto"`.
+
+---
+
+## ADR-006 — `Run.finalize` takes a `status` argument
+**Date:** 2026-08-01 · **Sprint:** 3 · **Status:** accepted
+
+**Context.** `ARCHITECTURE.md` §6 freezes `finalize(summary) -> None`, but the same document's manifest schema has a `status` field with four values (`running | completed | failed | interrupted`), and Sprint 4 requires a crash to write `status: "failed"`. The frozen signature has no way to express which of the four it is.
+
+**Decision.** Add a keyword argument with a default: `finalize(summary, status="completed")`. Every call written against the frozen signature keeps working unchanged.
+
+**Alternatives.** Have callers reach past `finalize` to `write_manifest({"status": ..., ...})` (rejected: duplicates the end-of-run field assembly at every abnormal-exit site, and the two copies will drift). Infer status inside `finalize` from `sys.exc_info()` (rejected: spooky action at a distance for a fact the caller already knows).
+
+**Consequences.** `Trainer.fit` labels its own exit: `completed`, `interrupted` on Ctrl-C, `failed` in an `except` that re-raises. A run directory therefore never sits at `status: "running"` after the process has gone.
+
+---
+
+## ADR-007 — `channels_last` defaults to off
+**Date:** 2026-08-01 · **Sprint:** 3 · **Status:** accepted
+
+**Context.** NHWC memory format is standard advice for AMP training, on the grounds that it feeds tensor cores without transposing. That advice is written for ImageNet-resolution tensors. Measured on this project's actual hardware (RTX 4060 Laptop, torch 2.11.0+cu128), at 32x32 with CIFAR channel counts it is a large *pessimization*:
+
+| model | channels_last | AMP | ms/step | s/epoch |
+|---|---|---|---|---|
+| SimpleCNN | on | on | 37.3 | 13.1 |
+| SimpleCNN | off | on | 12.8 | 4.5 |
+| ResNet-18-CIFAR | on | on | 102.4 | 36.0 |
+| ResNet-18-CIFAR | off | on | 35.2 | 12.4 |
+
+The GPU itself is healthy — an fp16 4096³ matmul sustains 28.9 TFLOPS at 2580 MHz with no throttling — so this is a kernel-selection effect at small spatial dimensions, not thermal or driver trouble. AMP is a clear win in both formats (1.4x); `cudnn.benchmark` is within noise.
+
+**Decision.** `train.channels_last` defaults to `false` in `base.yaml` and in `TrainConfig`.
+
+**Alternatives.** Keep it on to match the conventional recipe (rejected: 3x the wall clock on every run in the project, which is the difference between the 94% recipe fitting in the M3 45-minute budget and missing it by double). Remove the field (rejected: it is genuinely a win on other GPUs and at other resolutions, and the ablation is worth re-running when the hardware changes).
+
+**Consequences.** Every epoch budget in `PRD.md` §5 and `EXPERIMENTS.md` is measured with NHWC off. Anyone porting this to a desktop GPU or a larger input size should re-measure before assuming the default still holds — the field stayed configurable precisely so that costs one line.

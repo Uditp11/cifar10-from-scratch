@@ -50,7 +50,9 @@ optim:
 train:
   epochs: 120
   amp: true
-  channels_last: true
+  # Measured 3x SLOWER on this hardware at 32x32 -- see ADR-007. Kept as a
+  # config field so it can be re-tested on other GPUs / torch versions.
+  channels_last: false
   ema_decay: 0.0
   ema_warmup_epochs: 0
   eval_every: 1
