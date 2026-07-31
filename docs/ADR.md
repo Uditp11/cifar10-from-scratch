@@ -110,6 +110,8 @@ The GPU itself is healthy — an fp16 4096³ matmul sustains 28.9 TFLOPS at 2580
 
 **Consequences.** Every epoch budget in `PRD.md` §5 and `EXPERIMENTS.md` is measured with NHWC off. Anyone porting this to a desktop GPU or a larger input size should re-measure before assuming the default still holds — the field stayed configurable precisely so that costs one line.
 
+**Sprint 4 addendum.** The table above is a `ms/step` micro-benchmark. Re-measured as two full runs (`runs/cl_off` vs `runs/cl_on`, SimpleCNN, 6 epochs) the penalty is 2.2×, not 2.9×: an epoch also contains validation, checkpointing and logging, all format-independent, which dilutes the ratio. The decision is unchanged; when reading against a wall-clock budget, use the run-level number.
+
 ---
 
 ## ADR-008 — `keep_last_n_checkpoints` is inert under the two-file scheme
@@ -122,3 +124,18 @@ The GPU itself is healthy — an fp16 4096³ matmul sustains 28.9 TFLOPS at 2580
 **Alternatives.** Write per-epoch snapshots and prune them (rejected for now: a ResNet-18 checkpoint is ~45 MB and this buys a rollback capability nothing in Sprints 3–8 asks for). Delete the field (rejected: it is in the frozen `ARCHITECTURE.md` §1 contract, so removing it costs more than leaving it).
 
 **Consequences.** Setting `keep_last_n_checkpoints` has no effect today. Revive it the first time a run is long enough that losing the last N epochs actually hurts — Sprint 7's 300-epoch runs are the plausible trigger. At that point it is roughly ten lines in `Trainer._save`.
+
+---
+
+## ADR-009 — Ctrl-C does not write a checkpoint
+**Date:** 2026-08-01 · **Sprint:** 4 · **Status:** accepted
+
+**Context.** Sprint 3's `KeyboardInterrupt` handler called `self._save("last.pth", epoch)` on the way out, so an interrupt during epoch 50 wrote the *partially trained* epoch-50 weights under the label "epoch 50 complete". Resuming that checkpoint started at epoch 51: epoch 50 was silently skipped, the run reported 120 epochs having trained 119, and the scheduler — restored mid-epoch-50 but then given only 69 epochs of steps — never reached `min_learning_rate`. Sprint 4's gate ("kill a run with Ctrl-C and confirm `last.pth` resumes cleanly") is exactly the check that surfaced it.
+
+A checkpoint written mid-epoch is internally inconsistent in a way no epoch number can describe: the model has seen part of an epoch, the scheduler and RNG sit at an arbitrary step, and the epoch counter can only round one way or the other.
+
+**Decision.** The interrupt handler saves nothing. The `last.pth` already on disk — written at an epoch boundary, with model, optimizer, scheduler, scaler and RNG all agreeing — is left as the resume point, and the console line says which epoch that is and where a resume will continue from. `fit()` tracks `completed` (last epoch trained and logged) separately from `checkpointed` (last epoch actually written), and `summary["epochs_completed"]` reports the former.
+
+**Alternatives.** Save under `epoch - 1` (rejected: the weights still contain partial epoch-`epoch` progress, so the checkpoint stays inconsistent — it just relabels the inconsistency). Checkpoint mid-epoch with a step offset and resume the loader mid-stream (rejected: needs a resumable sampler and buys nothing that re-running one epoch doesn't).
+
+**Consequences.** Ctrl-C now costs up to `save_every` epochs of work instead of producing a subtly wrong resume — with the default `save_every: 1`, at most the partial epoch that was going to be discarded anyway. A run interrupted inside epoch 0 has no `last.pth` at all, which is correct: nothing completed. `epochs_completed` on an interrupted run is now one lower than sprint 3 would have reported for the same interrupt.

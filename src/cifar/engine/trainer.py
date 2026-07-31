@@ -19,14 +19,16 @@ from torch.utils.data import DataLoader
 
 from cifar.config import Config, config_hash
 from cifar.data.batch_aug import apply_batch_aug
+from cifar.data.dataset import CLASS_NAMES
 from cifar.engine.checkpoint import load_checkpoint, save_checkpoint
 from cifar.engine.criterion import build_criterion, mixed_criterion
-from cifar.engine.evaluator import evaluate
+from cifar.engine.evaluator import EvalResult, evaluate
 from cifar.engine.optim import build_optimizer, build_scheduler
 from cifar.seeding import capture_rng_state, restore_rng_state
 from cifar.tracking.logger import Logger
 from cifar.tracking.meters import AverageMeter, Timer, accuracy
 from cifar.tracking.run import Run
+from cifar.utils.viz import plot_confusion_matrix, plot_curves, plot_lr_schedule
 
 __all__ = ["EpochMetrics", "Trainer"]
 
@@ -79,6 +81,8 @@ class Trainer:
         self.start_epoch = 0
         self.best_val_acc = 0.0
         self.best_epoch = -1
+        # Kept so the end-of-run confusion matrix costs no extra forward pass.
+        self._last_eval: EvalResult | None = None
 
     def train_one_epoch(self, epoch: int) -> dict[str, float]:
         """Run one full pass over the training loader.
@@ -131,6 +135,7 @@ class Trainer:
             `{"val_loss", "val_acc"}`.
         """
         result = evaluate(self.model, self.val_loader, self.cfg)
+        self._last_eval = result
         return {"val_loss": result.loss, "val_acc": result.top1}
 
     def resume_from(self, path: Path) -> None:
@@ -179,15 +184,25 @@ class Trainer:
     def fit(self) -> dict[str, float]:
         """Train to `cfg.train.epochs`, validating, logging and checkpointing.
 
-        Ctrl-C saves `last.pth` and exits cleanly, so an interrupted run is
-        always resumable rather than lost.
+        Ctrl-C exits cleanly and leaves the last *epoch-boundary* `last.pth`
+        untouched, so an interrupted run resumes from a consistent point rather
+        than a half-trained one (ADR-009).
 
         Returns:
             `{"best_val_acc", "best_epoch", "final_val_acc", "epochs_completed"}`.
         """
         self.run.write_manifest()
+        # Before epoch 0: a schedule that is wrong is wrong now, and one second
+        # of plotting beats discovering it an hour in.
+        self.logger.log_figure(
+            "lr_schedule", plot_lr_schedule(self.cfg, len(self.train_loader)), step=0
+        )
         val: dict[str, float] = {"val_loss": math.nan, "val_acc": math.nan}
-        epoch = self.start_epoch - 1
+        # Two different "last epoch" notions, and conflating them is the bug
+        # ADR-009 fixes: `completed` is what was trained, `checkpointed` is what
+        # a resume would actually pick up. Neither is the epoch that happened to
+        # be running when the process stopped.
+        completed = checkpointed = self.start_epoch - 1
         status = "completed"
 
         try:
@@ -214,6 +229,7 @@ class Trainer:
                         epoch_seconds=timer.seconds,
                     )
                 )
+                completed = epoch
 
                 improved = is_eval_epoch and val["val_acc"] > self.best_val_acc
                 if improved:
@@ -222,11 +238,17 @@ class Trainer:
                     self._save("best.pth", epoch)
                 if (epoch + 1) % self.cfg.train.save_every == 0:
                     self._save("last.pth", epoch)
+                    checkpointed = epoch
 
         except KeyboardInterrupt:
+            # Deliberately no save here: the partial epoch's weights, scheduler
+            # and RNG do not agree with each other, and writing them over a good
+            # last.pth is how a resumed run silently skips an epoch (ADR-009).
             status = "interrupted"
-            self._save("last.pth", epoch)
-            self.logger.info(f"\nInterrupted at epoch {epoch + 1}; saved last.pth")
+            self.logger.info(
+                f"\nInterrupted during epoch {epoch + 1}; last.pth holds epoch "
+                f"{checkpointed + 1}, resume continues from epoch {checkpointed + 2}"
+            )
         except Exception:
             # A crashed run must not leave a manifest that says "running"
             # forever; finalize below still runs, then the error propagates.
@@ -237,9 +259,29 @@ class Trainer:
                 "best_val_acc": self.best_val_acc,
                 "best_epoch": self.best_epoch,
                 "final_val_acc": val["val_acc"],
-                "epochs_completed": epoch + 1,
+                "epochs_completed": completed + 1,
             }
+            # Finalize first: figure generation must never be what stops a
+            # manifest from being stamped, and it can raise on its own.
             self.run.finalize(summary, status=status)
+            self._write_figures(completed)
             self.logger.close()
 
         return summary
+
+    def _write_figures(self, epoch: int) -> None:
+        """Draw the end-of-run figures, if any epoch actually got logged.
+
+        A run that dies inside its first epoch has nothing to plot, and raising
+        from here would replace the real traceback with a plotting error.
+        """
+        metrics_path = self.run.dir / "metrics.jsonl"
+        if not metrics_path.exists() or not metrics_path.read_text().strip():
+            return
+        self.logger.log_figure("curves", plot_curves(self.run.dir / "metrics.jsonl"), step=epoch)
+        if self.cfg.log.log_confusion_matrix and self._last_eval is not None:
+            self.logger.log_figure(
+                "confusion_matrix",
+                plot_confusion_matrix(self._last_eval.confusion_matrix, list(CLASS_NAMES)),
+                step=epoch,
+            )
