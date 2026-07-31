@@ -297,8 +297,13 @@ def _validate(cfg: Config) -> None:
             f"({cfg.aug.cutmix_alpha}) is > 0 — an alpha that can never fire"
         )
     if not cfg.model.name:
-        # TODO(sprint-2): validate cfg.model.name against the model registry once it exists.
         raise ValueError(f"model.name ({cfg.model.name!r}) must be a non-empty string")
+    from cifar.models import list_models  # local: cifar.models imports Config at module scope
+
+    if cfg.model.name not in list_models():
+        raise ValueError(
+            f"model.name ({cfg.model.name!r}) is not registered. Registered models: {list_models()}"
+        )
     if cfg.optim.optimizer not in _KNOWN_OPTIMIZERS:
         raise ValueError(f"optimizer ({cfg.optim.optimizer!r}) must be one of {_KNOWN_OPTIMIZERS}")
     if cfg.optim.scheduler not in _KNOWN_SCHEDULERS:

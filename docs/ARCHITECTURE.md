@@ -189,7 +189,8 @@ def register_model(name: str) -> Callable[[type], type]:
 
 def build_model(cfg: Config) -> nn.Module:
     """Constructs the model named by cfg.model.name, moves it to cfg.device,
-    applies channels_last if configured, and initializes weights."""
+    and applies channels_last if configured. Weight init is NOT done here —
+    see below."""
 
 def list_models() -> list[str]: ...
 ```
@@ -197,8 +198,11 @@ def list_models() -> list[str]: ...
 **Every registered model must:**
 - accept `(cfg: ModelConfig)` as its only constructor argument
 - map `(B, 3, 32, 32) -> (B, num_classes)`
-- expose `.num_parameters` as a property
+- expose `.num_parameters` as a property (via `ModelBase`)
 - work at `B=1` (no batch-size assumptions)
+- **initialize its own weights in `__init__`**, including `zero_init_residual`. Init needs architecture-specific knowledge — which BN sits last in a residual branch — and hoisting that into `build_model` would couple the registry to one architecture. The registry places and configures; the model constructs itself.
+
+Registration happens as an import side effect of `cifar/models/__init__.py`. Always import `from cifar.models import ...`, never `from cifar.models.registry import ...` — the latter skips the registrations and yields an empty registry.
 
 Reference parameter counts (used in tests): `SimpleCNN` ≈ 1.2M, `ResNet-18-CIFAR` = 11,173,962, `ResNet-34-CIFAR` = 21,282,122.
 
