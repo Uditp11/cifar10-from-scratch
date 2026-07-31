@@ -7,7 +7,7 @@ test:
 	pytest -q
 
 lint:
-	ruff check src/
+	ruff check src/ tests/ scripts/
 
 format:
 	ruff format src/ tests/
@@ -21,5 +21,5 @@ eval:
 clean:
 	rm -rf runs/ .pytest_cache/ .ruff_cache/ **/__pycache__
 
-repro-check:
+repro-check: # stub, wired in sprint 8
 	python scripts/train.py repro.deterministic=true
