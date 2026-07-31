@@ -85,3 +85,18 @@ def test_override_coerces_none():
 def test_simplecnn_config_loads():
     cfg = load_config("configs/simplecnn.yaml")
     assert cfg.model.name == "simple_cnn"
+
+
+def test_yaml_scientific_notation_becomes_float():
+    """Regression: YAML 1.1 parses `5e-4` as a *str* (a plain float needs a dot
+    and a signed exponent). Uncoerced, weight_decay reached SGD as a string and
+    only raised at the first optimizer step."""
+    cfg = load_config("configs/base.yaml")
+    assert isinstance(cfg.optim.weight_decay, float)
+    assert cfg.optim.weight_decay == pytest.approx(5e-4)
+
+
+def test_quoted_yaml_numbers_are_coerced():
+    cfg = load_config("configs/base.yaml", ["optim.learning_rate=0.05", "train.epochs=7"])
+    assert isinstance(cfg.optim.learning_rate, float) and cfg.optim.learning_rate == 0.05
+    assert isinstance(cfg.train.epochs, int) and cfg.train.epochs == 7

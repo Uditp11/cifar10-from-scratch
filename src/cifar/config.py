@@ -231,10 +231,15 @@ def _build_section(cls: type, data: dict[str, Any], section_name: str) -> Any:
             continue
         value = data[f.name]
         annotation = hints[f.name]
-        if annotation is Path and isinstance(value, str):
-            value = Path(value)
-        elif typing.get_origin(annotation) is tuple and isinstance(value, list):
+        if typing.get_origin(annotation) is tuple and isinstance(value, list):
             value = tuple(value)
+        elif isinstance(value, str) and annotation is not str:
+            # YAML 1.1 parses `5e-4` as a *string* -- a plain float needs a dot
+            # and a signed exponent (`5.0e-4`). Left uncoerced, `weight_decay`
+            # reaches SGD as a str and only explodes at the first optimizer
+            # step, an hour into a run. Coerce every non-str field the same way
+            # CLI overrides are coerced, so the whole class of trap is closed.
+            value = _coerce(value, annotation)
         kwargs[f.name] = value
     return cls(**kwargs)
 
