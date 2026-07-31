@@ -1,0 +1,120 @@
+# Sprint 5 — The 94% recipe
+
+**Goal:** ResNet-18-CIFAR reaches **≥94.0% val accuracy**, with every ingredient's contribution measured and logged.
+
+**Depends on:** Sprint 4. **Blocks:** Sprints 6–8.
+**Estimated effort:** 1 session of coding + several hours of unattended training.
+
+---
+
+## Milestone
+
+PRD metric **M1** lands here. Everything before this sprint was infrastructure; everything after is refinement.
+
+## The recipe
+
+Nothing exotic — this is the well-trodden path, and the point is to walk it deliberately and measure each step.
+
+| Ingredient | Value | Why |
+|---|---|---|
+| Optimizer | SGD, momentum 0.9, **Nesterov** | Beats Adam by ~1% on CIFAR ResNets at equal budget |
+| Base LR | 0.1 (at batch 128) | Standard; scale linearly if batch changes |
+| Weight decay | 5e-4, **excluded from BN & bias** | Primary regularizer here |
+| Schedule | 5-epoch linear warmup → cosine to 0 | Warmup stabilizes the high-LR phase; cosine beats step by ~0.5% |
+| Epochs | 120 | Where cosine + this augmentation converges |
+| Batch size | 128 | Fits comfortably; the LR above is tuned for it |
+| Label smoothing | 0.1 | Small, reliable gain; also improves calibration |
+| AMP + channels_last | on | ~2× throughput, no accuracy cost |
+| Augmentation | pad-4 random crop + horizontal flip | The Sprint 1 baseline; more comes in Sprint 6 |
+
+## Components
+
+Most of this exists from Sprint 3. This sprint is mostly configuration, ablation, and verification.
+
+### C5.1 — LR range test
+
+`scripts/lr_finder.py` — train for ~200 steps while exponentially increasing LR from 1e-5 to 10, plot loss vs LR (log x). The steepest-descent region should bracket 0.1. Save to `docs/figures/lr_finder.png`.
+
+This is evidence, not ceremony: it converts "0.1 because everyone uses 0.1" into "0.1 because here is the curve." Takes two minutes to run.
+
+### C5.2 — Verify the optimizer details
+
+Confirm from Sprint 3 and fix if wrong:
+- `nesterov=True` reaches the optimizer.
+- Param groups genuinely split — print both group sizes at startup.
+- `grad_clip_norm` unscales before clipping under AMP.
+
+### C5.3 — Recipe configs
+
+- `configs/resnet18.yaml` — the full 94% recipe above.
+- `configs/ablations/` — one file per row of the table below, each inheriting from `resnet18.yaml` and changing exactly one thing.
+
+### C5.4 — Run the ablation ladder
+
+Each run is 120 epochs unless noted, ~25–40 min on a consumer GPU. Total ~4–6 hours. Launch with `scripts/sweep.py` and step away.
+
+| ID | Config | Change from full recipe | Expected val acc |
+|---|---|---|---|
+| E1 | `abl_adam` | AdamW 1e-3 instead of SGD | 93.0–94.0% |
+| E2 | `abl_step_lr` | Step LR (60, 90) instead of cosine | 94.0–94.7% |
+| E3 | `abl_no_warmup` | `warmup_epochs=0` | 94.3–95.0% |
+| E4 | `abl_wd_on_bn` | `no_wd_on_bn_bias=false` | 94.2–94.9% |
+| E5 | `abl_no_smoothing` | `label_smoothing=0.0` | 94.5–95.1% |
+| E6 | `abl_wd_1e4` | `weight_decay=1e-4` | 93.8–94.6% |
+| E7 | `abl_30ep` | `epochs=30` | 92.5–93.5% |
+| E8 | `abl_no_aug` | crop and flip off | 87–90% |
+| **F** | `resnet18.yaml` | — full recipe — | **94.5–95.3%** |
+
+Run E8 even though the result is unsurprising. Quantifying that basic augmentation is worth ~6 points is the most striking number in the whole table, and it anchors everything in Sprint 6.
+
+### C5.5 — Log the findings
+
+Append all nine rows to `docs/EXPERIMENTS.md` with run directory, config hash, best val acc, best epoch, and total minutes. Where a result falls outside its expected band, write a sentence of hypothesis. Bands are estimates from the literature, not contracts — a miss is information.
+
+---
+
+## Acceptance criteria
+
+- Full recipe run reaches **≥ 94.0%** best val accuracy. *(Gate)*
+- Wall-clock ≤ 45 minutes for that run (PRD **M3**). Report actual s/epoch.
+- All 9 ablation runs completed, logged, and present in `EXPERIMENTS.md`.
+- `docs/figures/lr_finder.png` exists and supports the LR choice.
+- Test accuracy from `eval.py` is within 0.5% of val accuracy. A larger gap means the val split is unrepresentative or the test set got contaminated — investigate before proceeding.
+
+```python
+def test_nesterov_reaches_optimizer():
+    opt = build_optimizer(model, cfg(optimizer="sgd", nesterov=True))
+    assert all(g["nesterov"] for g in opt.param_groups)
+
+def test_cosine_reaches_min_lr_at_final_step():
+    sched = build_scheduler(opt, cfg(epochs=10, warmup_epochs=2, min_learning_rate=0.0),
+                            steps_per_epoch=10)
+    for _ in range(100): opt.step(); sched.step()
+    assert opt.param_groups[0]["lr"] == pytest.approx(0.0, abs=1e-6)
+```
+
+## If it stalls below 94%
+
+Work in this order — the causes are ranked by how often they're actually the problem.
+
+1. **Weight decay reaching BN.** Print the two param-group sizes. For ResNet-18 the no-decay group should hold roughly 100 tensors.
+2. **Scheduler stepping per epoch.** Plot the observed LR from `metrics.jsonl`. If it's a staircase with 120 steps rather than a smooth cosine, this is the bug, and it costs ~1%.
+3. **Normalization stats wrong.** Re-run the Sprint 1 verification.
+4. **Not enough epochs.** Cosine's final low-LR phase contributes a lot. At 60 epochs you should expect ~93.5%; that's the schedule, not a bug.
+5. **Val leakage.** Confirm the disjointness test still passes.
+6. **Model selection on the wrong metric.** `best.pth` must track val accuracy, not train.
+7. **LR too high for the batch size.** If you changed batch size, scale LR linearly (`lr = 0.1 × batch / 128`).
+
+---
+
+## Implementation prompt
+
+> Read `CLAUDE.md`, `docs/EXPERIMENTS.md`, and `docs/sprints/05-the-94-recipe.md`.
+>
+> Implement C5.1 (LR range test script), verify C5.2, and write the configs in C5.3 — `configs/resnet18.yaml` plus one ablation file per row of the C5.4 table, each changing exactly one thing from the full recipe.
+>
+> Then run `scripts/sweep.py --dir configs/ablations/` plus the full recipe. This is hours of GPU time, so start it and report progress as runs land.
+>
+> The gate is ≥94.0% val accuracy on the full recipe. If it stalls below that, work the checklist at the end of this sprint file in order — do not start randomly changing hyperparameters, and do not touch the test set.
+>
+> Finish by appending all rows to `docs/EXPERIMENTS.md` with a short interpretation of each result, especially any that fell outside its expected band.

@@ -1,0 +1,33 @@
+# runs & data — never committed
+runs/
+data/
+*.pth
+*.pt
+*.ckpt
+
+# python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+
+# tooling
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# editors / os
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# tensorboard stray logs outside runs/
+events.out.tfevents.*
