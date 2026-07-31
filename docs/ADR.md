@@ -109,3 +109,16 @@ The GPU itself is healthy — an fp16 4096³ matmul sustains 28.9 TFLOPS at 2580
 **Alternatives.** Keep it on to match the conventional recipe (rejected: 3x the wall clock on every run in the project, which is the difference between the 94% recipe fitting in the M3 45-minute budget and missing it by double). Remove the field (rejected: it is genuinely a win on other GPUs and at other resolutions, and the ablation is worth re-running when the hardware changes).
 
 **Consequences.** Every epoch budget in `PRD.md` §5 and `EXPERIMENTS.md` is measured with NHWC off. Anyone porting this to a desktop GPU or a larger input size should re-measure before assuming the default still holds — the field stayed configurable precisely so that costs one line.
+
+---
+
+## ADR-008 — `keep_last_n_checkpoints` is inert under the two-file scheme
+**Date:** 2026-08-01 · **Sprint:** 3 · **Status:** accepted
+
+**Context.** Sprint 3 asks for `last.pth` written every `save_every` epochs, `best.pth` on improvement, and pruning to `keep_last_n_checkpoints`. The first two rotate in place, so after them there is nothing left to prune — the field only becomes meaningful if the trainer also writes per-epoch snapshots (`epoch_0042.pth`), which `ARCHITECTURE.md` §6's run-directory listing does not include.
+
+**Decision.** Write only `last.pth` and `best.pth`. `keep_last_n_checkpoints` stays in the config, unused, and this entry is the record that it is unused — a config field that silently does nothing is the exact failure mode `_validate`'s batch-aug coherence checks exist to prevent, so it should not go unrecorded.
+
+**Alternatives.** Write per-epoch snapshots and prune them (rejected for now: a ResNet-18 checkpoint is ~45 MB and this buys a rollback capability nothing in Sprints 3–8 asks for). Delete the field (rejected: it is in the frozen `ARCHITECTURE.md` §1 contract, so removing it costs more than leaving it).
+
+**Consequences.** Setting `keep_last_n_checkpoints` has no effect today. Revive it the first time a run is long enough that losing the last N epochs actually hurts — Sprint 7's 300-epoch runs are the plausible trigger. At that point it is roughly ten lines in `Trainer._save`.
