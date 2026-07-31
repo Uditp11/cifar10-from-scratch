@@ -1,6 +1,6 @@
 # runs & data — never committed
-runs/
-data/
+/runs/
+/data/
 *.pth
 *.pt
 *.ckpt
