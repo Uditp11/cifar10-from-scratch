@@ -328,3 +328,33 @@ def test_nan_val_metrics_when_eval_is_skipped(tmp_path):
     rows = [json.loads(line) for line in (run.dir / "metrics.jsonl").read_text().splitlines()]
     assert math.isnan(rows[0]["val_acc"])
     assert not math.isnan(rows[2]["val_acc"])
+
+
+def test_epoch_log_is_persisted_before_the_console_write(tmp_path):
+    """Regression: a UnicodeEncodeError while printing the epoch line killed a
+    GPU run and took the completed epoch's metrics with it."""
+    cfg = cfg_for(tmp_path, train__epochs=1, optim__warmup_epochs=0)
+    run = Run(cfg)
+    trainer = Trainer(build_model(cfg), tiny_loaders(n=32), cfg, run)
+    trainer.logger._console.print = lambda *a, **k: (_ for _ in ()).throw(
+        UnicodeEncodeError("charmap", "x", 0, 1, "boom")
+    )
+
+    with pytest.raises(UnicodeEncodeError):
+        trainer.fit()
+
+    assert len((run.dir / "metrics.jsonl").read_text().splitlines()) == 1
+    import json
+
+    assert json.loads((run.dir / "run_manifest.json").read_text())["status"] == "failed"
+
+
+def test_console_epoch_line_is_ascii(tmp_path):
+    """Windows' legacy console encodes cp1252; a non-ASCII separator raises."""
+    cfg = cfg_for(tmp_path, train__epochs=1, optim__warmup_epochs=0)
+    run = Run(cfg)
+    trainer = Trainer(build_model(cfg), tiny_loaders(n=32), cfg, run)
+    printed = []
+    trainer.logger._console.print = printed.append
+    trainer.fit()
+    assert printed and all(line.isascii() for line in printed)

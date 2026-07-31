@@ -227,13 +227,19 @@ class Trainer:
             status = "interrupted"
             self._save("last.pth", epoch)
             self.logger.info(f"\nInterrupted at epoch {epoch + 1}; saved last.pth")
+        except Exception:
+            # A crashed run must not leave a manifest that says "running"
+            # forever; finalize below still runs, then the error propagates.
+            status = "failed"
+            raise
+        finally:
+            summary = {
+                "best_val_acc": self.best_val_acc,
+                "best_epoch": self.best_epoch,
+                "final_val_acc": val["val_acc"],
+                "epochs_completed": epoch + 1,
+            }
+            self.run.finalize(summary, status=status)
+            self.logger.close()
 
-        summary = {
-            "best_val_acc": self.best_val_acc,
-            "best_epoch": self.best_epoch,
-            "final_val_acc": val["val_acc"],
-            "epochs_completed": epoch + 1,
-        }
-        self.run.finalize(summary, status=status)
-        self.logger.close()
         return summary

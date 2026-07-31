@@ -3,6 +3,15 @@
 Sprint 3 scope: two of the three destinations. TensorBoard and figure logging
 land in sprint 4 behind these same call sites, so nothing in `engine/` changes
 when they do.
+
+Two ordering/encoding rules here are load-bearing, both learned by crashing a
+GPU run at the end of epoch 1:
+
+- The JSONL row is written *before* the console line. Console output is the
+  fragile destination; a run that dies while printing must still have its
+  completed epochs on disk.
+- Console output stays ASCII. Windows' legacy console encodes as cp1252, and a
+  box-drawing separator raises `UnicodeEncodeError` mid-run.
 """
 
 from __future__ import annotations
@@ -51,20 +60,20 @@ class Logger:
             prefix: Namespace, e.g. `"val"` -> `val_loss`, `val_acc`.
         """
         tagged = {f"{prefix}_{k}" if prefix else k: v for k, v in metrics.items()}
-        self._console.print(
-            f"step {step:>4} │ " + " │ ".join(f"{k} {v:.4g}" for k, v in tagged.items())
-        )
         self._append_jsonl({"epoch": step, **tagged, "timestamp": _utc_now()})
+        self._console.print(
+            f"step {step:>4} | " + " | ".join(f"{k} {v:.4g}" for k, v in tagged.items())
+        )
 
     def log_epoch(self, m: EpochMetrics) -> None:
-        """Log one epoch's metrics: a scannable console line plus a JSONL row."""
-        self._console.print(
-            f"epoch {m.epoch + 1:>4}/{self._cfg.train.epochs} │ "
-            f"train {m.train_loss:.3f} / {m.train_acc:.1f}% │ "
-            f"val {m.val_loss:.3f} / {m.val_acc:.1f}% │ "
-            f"lr {m.learning_rate:.2e} │ {m.epoch_seconds:.1f}s"
-        )
+        """Log one epoch's metrics: a JSONL row first, then a scannable console line."""
         self._append_jsonl({**asdict(m), "timestamp": _utc_now()})
+        self._console.print(
+            f"epoch {m.epoch + 1:>4}/{self._cfg.train.epochs} | "
+            f"train {m.train_loss:.3f} / {m.train_acc:.1f}% | "
+            f"val {m.val_loss:.3f} / {m.val_acc:.1f}% | "
+            f"lr {m.learning_rate:.2e} | {m.epoch_seconds:.1f}s"
+        )
 
     def close(self) -> None:
         """Release logging resources. A no-op until sprint 4 adds TensorBoard."""
