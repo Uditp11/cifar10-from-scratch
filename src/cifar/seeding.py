@@ -64,6 +64,16 @@ def capture_rng_state() -> dict:
     }
 
 
+def _as_cpu_byte(state: torch.Tensor) -> torch.Tensor:
+    """Coerce an RNG state tensor to the CPU ByteTensor the setters demand.
+
+    `load_checkpoint(map_location="cuda")` moves *every* tensor in the payload
+    to the GPU, RNG state included, and `set_rng_state` then rejects it. Since
+    the state travels inside a checkpoint, it can arrive on any device.
+    """
+    return state.detach().cpu().to(torch.uint8)
+
+
 def restore_rng_state(state: dict) -> None:
     """Restore a snapshot from `capture_rng_state`.
 
@@ -74,7 +84,7 @@ def restore_rng_state(state: dict) -> None:
     """
     random.setstate(state["python"])
     np.random.set_state(state["numpy"])
-    torch.set_rng_state(state["torch"].cpu().to(torch.uint8))
+    torch.set_rng_state(_as_cpu_byte(state["torch"]))
     cuda_state = state.get("torch_cuda")
     if cuda_state and torch.cuda.is_available() and len(cuda_state) == torch.cuda.device_count():
-        torch.cuda.set_rng_state_all(cuda_state)
+        torch.cuda.set_rng_state_all([_as_cpu_byte(s) for s in cuda_state])
