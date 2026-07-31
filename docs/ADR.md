@@ -17,7 +17,7 @@ Any deviation from `ARCHITECTURE.md`, any added dependency, and any decision tha
 ---
 
 ## ADR-001 — Fixed val split committed to the repo
-**Date:** _TBD_ · **Sprint:** 1 · **Status:** accepted
+**Date:** 2026-07-31 · **Sprint:** 1 · **Status:** accepted
 
 **Context.** The 5,000-image validation split can be derived from a seed at runtime or fixed once and committed. A seed-derived split makes val accuracy incomparable across runs whenever the seed changes, which is exactly what happens during seed-variance experiments in Sprint 7.
 
