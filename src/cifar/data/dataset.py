@@ -24,7 +24,28 @@ from torchvision.datasets import CIFAR10
 from cifar.config import Config
 from cifar.data.transforms import build_eval_transform, build_train_transform
 
-__all__ = ["build_datasets", "generate_val_indices", "REPO_ROOT", "VAL_INDICES_PATH"]
+__all__ = [
+    "build_datasets",
+    "generate_val_indices",
+    "CLASS_NAMES",
+    "REPO_ROOT",
+    "VAL_INDICES_PATH",
+]
+
+# CIFAR-10's own label order (== torchvision's `CIFAR10.classes`), kept here so
+# reporting code can name a class index without touching the data directory.
+CLASS_NAMES: tuple[str, ...] = (
+    "airplane",
+    "automobile",
+    "bird",
+    "cat",
+    "deer",
+    "dog",
+    "frog",
+    "horse",
+    "ship",
+    "truck",
+)
 
 # Anchored to the repo root (not CWD) so build_datasets works regardless of
 # where the caller was invoked from. Later sprints needing a repo-relative
