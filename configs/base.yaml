@@ -22,7 +22,7 @@ aug:
   randaugment_m: 9
   mixup_alpha: 0.0
   cutmix_alpha: 0.0
-  batch_aug_prob: 0.5
+  batch_aug_prob: 0.0
 
 model:
   name: resnet18_cifar
@@ -69,7 +69,7 @@ log:
   step_interval: 0
   log_confusion_matrix: true
 
-# Default to cpu so the repo runs out of the box on any machine; override
-# with `device=cuda` (or a config that sets it) on GPU hardware.
-device: cpu
+# "auto" resolves at load time: cuda if available, else cpu. The resolved
+# value (not "auto") is what lands in the frozen Config and run_manifest.json.
+device: auto
 notes: ""

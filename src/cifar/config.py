@@ -121,7 +121,7 @@ class Config:
     train: TrainConfig
     repro: ReproConfig
     log: LogConfig
-    device: str = "cuda"
+    device: str = "auto"  # auto | cuda | cpu — "auto" resolves at load time
     notes: str = ""
 
 
@@ -239,6 +239,26 @@ def _build_section(cls: type, data: dict[str, Any], section_name: str) -> Any:
     return cls(**kwargs)
 
 
+def _resolve_device(raw: str) -> str:
+    """Resolve `auto | cuda | cpu` to the concrete device that lands in Config.
+
+    An explicit `cuda` with no CUDA available raises rather than silently
+    downgrading to CPU — a 50x slowdown that should never happen quietly.
+    """
+    if raw not in ("auto", "cuda", "cpu"):
+        raise ValueError(f"device ({raw!r}) must be one of 'auto', 'cuda', 'cpu'")
+    if raw == "auto":
+        return "cuda" if torch.cuda.is_available() else "cpu"
+    if raw == "cuda" and not torch.cuda.is_available():
+        raise ValueError(
+            "device ('cuda') requires torch.cuda.is_available() to be True. "
+            "If a GPU is present, this is commonly a CPU-only torch wheel "
+            "(the default on Windows/PyPI) — reinstall from "
+            "https://pytorch.org/get-started/locally/ with a cuXXX build."
+        )
+    return raw
+
+
 def _dict_to_config(data: dict[str, Any]) -> Config:
     unknown_top = set(data) - set(_SECTIONS) - _TOP_LEVEL_SCALARS
     if unknown_top:
@@ -247,8 +267,7 @@ def _dict_to_config(data: dict[str, Any]) -> Config:
     kwargs: dict[str, Any] = {
         name: _build_section(cls, data.get(name, {}), name) for name, cls in _SECTIONS.items()
     }
-    if "device" in data:
-        kwargs["device"] = data["device"]
+    kwargs["device"] = _resolve_device(data.get("device", "auto"))
     if "notes" in data:
         kwargs["notes"] = data["notes"]
     return Config(**kwargs)
@@ -267,14 +286,15 @@ def _validate(cfg: Config) -> None:
         )
     if not (0 < cfg.data.val_size < 50000):
         raise ValueError(f"val_size ({cfg.data.val_size}) must satisfy 0 < val_size < 50000")
-    if (
-        cfg.aug.batch_aug_prob == 0
-        and cfg.aug.mixup_alpha > 0
-        and cfg.aug.cutmix_alpha > 0
-    ):
+    if cfg.aug.batch_aug_prob > 0 and cfg.aug.mixup_alpha == 0 and cfg.aug.cutmix_alpha == 0:
         raise ValueError(
-            f"batch_aug_prob (0) requires at least one of mixup_alpha "
-            f"({cfg.aug.mixup_alpha}) / cutmix_alpha ({cfg.aug.cutmix_alpha}) to be 0"
+            f"batch_aug_prob ({cfg.aug.batch_aug_prob}) is > 0 but both mixup_alpha and "
+            f"cutmix_alpha are 0 — a probability with nothing to apply"
+        )
+    if cfg.aug.batch_aug_prob == 0 and (cfg.aug.mixup_alpha > 0 or cfg.aug.cutmix_alpha > 0):
+        raise ValueError(
+            f"batch_aug_prob is 0 but mixup_alpha ({cfg.aug.mixup_alpha}) / cutmix_alpha "
+            f"({cfg.aug.cutmix_alpha}) is > 0 — an alpha that can never fire"
         )
     if not cfg.model.name:
         # TODO(sprint-2): validate cfg.model.name against the model registry once it exists.

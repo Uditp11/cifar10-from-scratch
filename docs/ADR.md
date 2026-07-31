@@ -64,6 +64,13 @@ Any deviation from `ARCHITECTURE.md`, any added dependency, and any decision tha
 
 ---
 
-## ADR-005 — _next_
+## ADR-005 — `device: auto` resolved at load time
+**Date:** 2026-07-31 · **Sprint:** 0 · **Status:** accepted
 
-_Add entries as decisions are made. Interface changes to `ARCHITECTURE.md` require one._
+**Context.** `base.yaml` originally hardcoded `device: cpu` so the repo would run out of the box on a machine without a GPU. That default is exactly wrong on a machine *with* one: nothing about the config says "this is the CPU fallback," so a GPU run silently trains on CPU — a ~50x slowdown — until someone notices, potentially a whole session later.
+
+**Decision.** `device` becomes `auto | cuda | cpu`. `"auto"` resolves at load time to `"cuda"` if `torch.cuda.is_available()` else `"cpu"`; the *resolved* value is what lands in the frozen `Config`, so `run_manifest.json` records what actually ran, never the unresolved intent. An explicit `device: cuda` with no CUDA available still raises — resolution only ever fills in for `"auto"`, it never downgrades an explicit request. `base.yaml` sets `device: auto`. The error message for the explicit-cuda-without-CUDA case now mentions CPU-only wheels, since that's the likely cause on Windows (PyPI's default `torch` wheel has no CUDA support).
+
+**Alternatives.** Keep `device: cpu` as the safe default (rejected: silently wastes GPU time, the failure mode this exists to prevent). Require `device` to always be explicit with no `"auto"` (rejected: pushes a resolution the machine can answer onto every operator, every time).
+
+**Consequences.** Two configs with identical explicit settings but different hardware can now resolve to different `Config.device` values — `config_hash` is unaffected since hashing happens after resolution and hardware-driven runs are expected to differ. Code that inspects `cfg.device` never sees `"auto"`.
