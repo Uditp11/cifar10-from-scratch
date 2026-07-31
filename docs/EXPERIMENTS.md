@@ -70,6 +70,11 @@ Laptop GPU — record whether the machine was plugged in and on the "Best perfor
 
 ---
 
+## Candidate ablations
+
+- `random_crop_padding` uses `padding_mode="reflect"` (`build_train_transform`, sprint 1). Zero padding is the
+  classic recipe and is worth testing in Sprint 5.
+
 ## Findings
 
 Write these as you go, in prose, one short paragraph each. The table holds the numbers; this section holds the understanding. Candidates that usually turn out to be worth writing up:
