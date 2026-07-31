@@ -1,0 +1,75 @@
+# Base config — every default written out explicitly so an operator can read
+# this one file and know the whole setup. simplecnn.yaml / resnet18.yaml
+# inherit from this and override only what differs.
+
+data:
+  root: ./data
+  val_size: 5000
+  batch_size: 128
+  eval_batch_size: 512
+  num_workers: 4
+  pin_memory: true
+  persistent_workers: true
+  mean: [0.4914, 0.4822, 0.4465]
+  std: [0.2470, 0.2435, 0.2616]
+
+aug:
+  random_crop_padding: 4
+  horizontal_flip_p: 0.5
+  cutout_holes: 0
+  cutout_length: 16
+  randaugment_n: 0
+  randaugment_m: 9
+  mixup_alpha: 0.0
+  cutmix_alpha: 0.0
+  batch_aug_prob: 0.5
+
+model:
+  name: resnet18_cifar
+  num_classes: 10
+  width_multiplier: 1.0
+  dropout: 0.0
+  zero_init_residual: true
+
+optim:
+  optimizer: sgd
+  learning_rate: 0.1
+  momentum: 0.9
+  nesterov: true
+  weight_decay: 5e-4
+  no_wd_on_bn_bias: true
+  scheduler: cosine
+  warmup_epochs: 5
+  warmup_start_factor: 0.1
+  min_learning_rate: 0.0
+  step_milestones: [60, 90]
+  step_gamma: 0.1
+  label_smoothing: 0.0
+  grad_clip_norm: 0.0
+
+train:
+  epochs: 120
+  amp: true
+  channels_last: true
+  ema_decay: 0.0
+  ema_warmup_epochs: 0
+  eval_every: 1
+  save_every: 1
+  keep_last_n_checkpoints: 2
+
+repro:
+  seed: 42
+  deterministic: false
+  cudnn_benchmark: true
+
+log:
+  run_root: ./runs
+  run_name: null
+  tensorboard: true
+  step_interval: 0
+  log_confusion_matrix: true
+
+# Default to cpu so the repo runs out of the box on any machine; override
+# with `device=cuda` (or a config that sets it) on GPU hardware.
+device: cpu
+notes: ""

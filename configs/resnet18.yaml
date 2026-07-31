@@ -1,0 +1,4 @@
+inherits: base.yaml
+
+model:
+  name: resnet18_cifar
