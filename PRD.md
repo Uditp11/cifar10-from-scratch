@@ -48,10 +48,10 @@ Explicitly out of scope for v1. Listing these prevents scope creep mid-sprint.
 
 ## 5. Constraints & assumptions
 
-- **Hardware:** one consumer GPU (8–12 GB VRAM class, e.g. RTX 3060/4070). All budgets assume batch size 128 with AMP enabled.
+- **Hardware:** RTX 4060 Laptop GPU (8 GB) + i7-14700HX. All budgets assume batch size 128 with AMP enabled. VRAM is not a constraint here — ResNet-18 on 32×32 inputs at batch 128 uses under 2 GB — but laptop thermals are, so expect ~10–15% throughput decay on runs over an hour.
 - **Python** 3.10+, **PyTorch** 2.x, CUDA available but code must degrade gracefully to CPU (slow) for tests.
 - **Dependencies:** `torch`, `torchvision` (for the *dataset download only*, plus `ToTensor`), `numpy`, `pyyaml`, `tensorboard`, `matplotlib`, `rich`. Anything else needs a note in the ADR log.
-- **Epoch budget reference** (batch 128, AMP, channels_last, RTX 4070-class): SimpleCNN ≈ 4 s/epoch, ResNet-18-CIFAR ≈ 10–12 s/epoch. On a 3060-laptop class card, roughly 1.6× those. A 120-epoch ResNet run is therefore ~20–40 min.
+- **Epoch budget reference** (batch 128, AMP, channels_last, RTX 4060 Laptop): SimpleCNN ≈ 5–6 s/epoch, ResNet-18-CIFAR ≈ 14–18 s/epoch. Measure yours in Sprint 3 and replace these estimates. At ~16 s/epoch: 120 ep ≈ 32 min (inside the M3 budget), 200 ep ≈ 53 min, 300 ep ≈ 80 min. Total GPU time across Sprints 5–7 ≈ 16–18 h.
 
 ## 6. Architecture
 

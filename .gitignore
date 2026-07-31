@@ -24,6 +24,7 @@ env/
 htmlcov/
 
 # editors / os
+.claude/settings.local.json
 .vscode/
 .idea/
 .DS_Store

@@ -34,7 +34,7 @@ class AugConfig:
     randaugment_m: int = 9
     mixup_alpha: float = 0.0           # 0 disables
     cutmix_alpha: float = 0.0          # 0 disables
-    batch_aug_prob: float = 0.5        # P(apply mixup/cutmix to a given batch)
+    batch_aug_prob: float = 0.0        # P(apply mixup/cutmix); 0 with both alphas 0 = off
 
 @dataclass(frozen=True)
 class ModelConfig:

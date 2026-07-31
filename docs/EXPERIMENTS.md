@@ -15,9 +15,11 @@ Every training run that informs a decision gets a row here. A result you can't p
 
 Fill in once, in Sprint 3, so every timing below is interpretable.
 
-| GPU | VRAM | PyTorch | CUDA | OS |
-|---|---|---|---|---|
-| _TBD_ | | | | |
+| GPU | VRAM | CPU | PyTorch | CUDA | OS |
+|---|---|---|---|---|---|
+| NVIDIA RTX 4060 Laptop | 8 GB | i7-14700HX | 2.11.0+cu128 | 12.8 | Windows 11 |
+
+Laptop GPU — record whether the machine was plugged in and on the "Best performance" power profile, since thermal throttling on runs over an hour is the main source of timing variance between otherwise identical runs.
 
 ---
 
