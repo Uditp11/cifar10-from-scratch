@@ -1,26 +1,71 @@
 """The run directory. See `docs/ARCHITECTURE.md` §6.
 
-Sprint 3 scope: create the directory, save the resolved config so a run can be
-re-loaded and evaluated, and keep a manifest whose `status` is honest about how
-the run ended. Sprint 4 fills in the git/env capture and the figures directory.
+A run directory is meant to be self-describing months later: the manifest says
+what code, what hardware and what config produced the numbers, and `config.yaml`
+re-loads to a `Config` that hashes identically.
+
+Three fields sit in `runtime` rather than being left implicit in `config`: the
+*resolved* device (ADR-005 -- `"auto"` never reaches the manifest), the
+`channels_last` memory format (ADR-007 makes it a first-class experimental
+variable, not a detail), and the measured steady-state seconds per epoch.
 """
 
 from __future__ import annotations
 
 import json
+import platform
+import statistics
+import subprocess
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
+import torch
 import yaml
 
 from cifar.config import Config, config_hash, config_to_dict
 
 __all__ = ["Run"]
 
+_REPO = Path(__file__).resolve().parent
+
 
 def _utc_now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _git_info() -> dict[str, Any]:
+    """Describe the working tree the run started from.
+
+    Degrades to nulls rather than raising: git may be absent, or the project may
+    have been copied out of its repository. A run without provenance is worse
+    than a run with none, but it is not a reason to refuse to train.
+    """
+
+    def git(*args: str) -> str:
+        out = subprocess.run(["git", *args], cwd=_REPO, capture_output=True, text=True, check=True)
+        return out.stdout.strip()
+
+    try:
+        return {
+            "sha": git("rev-parse", "--short", "HEAD"),
+            "branch": git("rev-parse", "--abbrev-ref", "HEAD"),
+            "dirty": bool(git("status", "--porcelain")),
+        }
+    except (OSError, subprocess.CalledProcessError):
+        return {"sha": None, "branch": None, "dirty": None}
+
+
+def _env_info() -> dict[str, Any]:
+    """Versions and hardware, so a timing number can be read years later."""
+    return {
+        "python": platform.python_version(),
+        "torch": torch.__version__,
+        "cuda": torch.version.cuda,
+        "gpu": torch.cuda.get_device_name(0) if torch.cuda.is_available() else None,
+        "platform": platform.platform(),
+    }
 
 
 class Run:
@@ -48,6 +93,8 @@ class Run:
         self.name = name
         self._dir = root / name
         self.checkpoint_dir.mkdir(parents=True)
+        self.figures_dir.mkdir()
+        self.tb_dir.mkdir()
         (self._dir / "config.yaml").write_text(yaml.safe_dump(config_to_dict(cfg), sort_keys=False))
 
     @property
@@ -57,6 +104,31 @@ class Run:
     @property
     def checkpoint_dir(self) -> Path:
         return self._dir / "checkpoints"
+
+    @property
+    def figures_dir(self) -> Path:
+        return self._dir / "figures"
+
+    @property
+    def tb_dir(self) -> Path:
+        return self._dir / "tb"
+
+    def _seconds_per_epoch(self) -> float | None:
+        """Median steady-state epoch time from `metrics.jsonl`, or None.
+
+        The first epoch is dropped whenever there is more than one: on Windows
+        it carries a fixed 60-75 s of DataLoader worker spawn, which describes
+        the platform rather than the model (EXPERIMENTS.md, sprint 3). Median,
+        not mean, so one thermally-throttled epoch does not move the number.
+        """
+        path = self._dir / "metrics.jsonl"
+        if not path.exists():
+            return None
+        rows = [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+        times = [row["epoch_seconds"] for row in rows if "epoch_seconds" in row]
+        if not times:
+            return None
+        return round(statistics.median(times[1:] or times), 2)
 
     def write_manifest(self, extra: dict | None = None) -> None:
         """Write `run_manifest.json` with `status: "running"`.
@@ -71,6 +143,13 @@ class Run:
             "run_name": self.name,
             "config_hash": config_hash(self._cfg),
             "config": config_to_dict(self._cfg),
+            "git": _git_info(),
+            "env": _env_info(),
+            "runtime": {
+                "device": self._cfg.device,
+                "channels_last": self._cfg.train.channels_last,
+                "seconds_per_epoch": self._seconds_per_epoch(),
+            },
             "started_at": self._started_at,
             "status": "running",
         }

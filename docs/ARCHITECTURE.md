@@ -297,8 +297,12 @@ class Run:
     def dir(self) -> Path: ...
     @property
     def checkpoint_dir(self) -> Path: ...
+    @property
+    def figures_dir(self) -> Path: ...
+    @property
+    def tb_dir(self) -> Path: ...
     def write_manifest(self, extra: dict | None = None) -> None: ...
-    def finalize(self, summary: dict[str, float]) -> None: ...
+    def finalize(self, summary: dict[str, float], status: str = "completed") -> None: ...
 ```
 
 `run_manifest.json` schema:
@@ -311,6 +315,7 @@ class Run:
   "git": { "sha": "abc1234", "branch": "main", "dirty": false },
   "env": { "python": "3.11.6", "torch": "2.3.0", "cuda": "12.1",
            "gpu": "NVIDIA GeForce RTX 4070", "platform": "Windows-11" },
+  "runtime": { "device": "cuda", "channels_last": false, "seconds_per_epoch": 11.3 },
   "started_at": "2026-07-31T14:23:00Z",
   "finished_at": "2026-07-31T14:58:12Z",
   "total_seconds": 2112.4,
@@ -319,15 +324,24 @@ class Run:
 }
 ```
 
+`runtime` holds the three facts that decide whether two runs are comparable and are not
+readable off the config alone: the *resolved* device (ADR-005 — `"auto"` never reaches
+the manifest), the memory format (ADR-007 makes it an experimental variable, not a
+detail), and the measured steady-state `seconds_per_epoch` — the median of the
+per-epoch times in `metrics.jsonl`, excluding the first epoch, which on Windows carries
+a fixed 60–75 s of DataLoader worker spawn. It is `null` until at least one epoch has
+been logged.
+
 ```python
 # src/cifar/tracking/logger.py
 class Logger:
     def __init__(self, run: Run, cfg: Config) -> None: ...
     def log_scalars(self, metrics: dict[str, float], step: int,
                     prefix: str = "") -> None:
-        """Writes to console, TensorBoard, and metrics.jsonl in one call."""
+        """Writes to console, train.log, TensorBoard, and metrics.jsonl in one call."""
     def log_epoch(self, m: EpochMetrics) -> None: ...
-    def log_figure(self, name: str, fig, step: int) -> None: ...
+    def log_figure(self, name: str, fig, step: int = 0) -> None: ...
+    def info(self, message: str) -> None: ...
     def close(self) -> None: ...
 
 # src/cifar/tracking/meters.py
