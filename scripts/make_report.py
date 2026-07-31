@@ -1,0 +1,189 @@
+"""Compare finished runs: a markdown table plus an overlaid val-accuracy curve.
+
+Usage:
+    python scripts/make_report.py --runs runs/a runs/b --out docs/
+    python scripts/make_report.py --all --out docs/
+
+Only hyperparameters that *differ* between the compared runs get a column. A
+table with forty identical columns is a table nobody reads.
+
+Appends to `docs/EXPERIMENTS.md` rather than rewriting it: the prose findings in
+that file are hand-written and worth more than the tables.
+
+Prints the report path as its last line of stdout so runs can be chained.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+from datetime import datetime
+from pathlib import Path
+from typing import Any
+
+# Imported through viz so the Agg backend is selected in exactly one place.
+from cifar.utils.viz import plt
+
+# Config sections that describe bookkeeping, not the experiment.
+_IGNORED_TOP_LEVEL = {"log", "notes"}
+
+
+def _flatten(prefix: str, value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {prefix: value}
+    flat: dict[str, Any] = {}
+    for key, sub in value.items():
+        flat.update(_flatten(f"{prefix}.{key}" if prefix else key, sub))
+    return flat
+
+
+def load_run(run_dir: Path) -> dict[str, Any]:
+    """Read one run's manifest and per-epoch metrics.
+
+    Args:
+        run_dir: A directory written by `Run`.
+
+    Returns:
+        `{"dir", "manifest", "params", "epochs"}` where `params` is the flat,
+        comparable view of the config.
+
+    Raises:
+        FileNotFoundError: If the directory has no manifest -- a run that never
+            started is not something to silently drop from a comparison.
+    """
+    manifest_path = run_dir / "run_manifest.json"
+    if not manifest_path.exists():
+        raise FileNotFoundError(f"{run_dir} has no run_manifest.json")
+    manifest = json.loads(manifest_path.read_text())
+
+    config = {k: v for k, v in manifest.get("config", {}).items() if k not in _IGNORED_TOP_LEVEL}
+    metrics_path = run_dir / "metrics.jsonl"
+    epochs = (
+        [json.loads(line) for line in metrics_path.read_text().splitlines() if line.strip()]
+        if metrics_path.exists()
+        else []
+    )
+    return {
+        "dir": run_dir,
+        "manifest": manifest,
+        "params": _flatten("", config),
+        "epochs": epochs,
+    }
+
+
+def differing_params(runs: list[dict]) -> list[str]:
+    """Names of the config fields that are not identical across every run."""
+    keys = sorted({k for r in runs for k in r["params"]})
+    return [k for k in keys if len({json.dumps(r["params"].get(k)) for r in runs}) > 1]
+
+
+def _cell(value: Any) -> str:
+    if value is None:
+        return "-"
+    if isinstance(value, float):
+        return f"{value:g}"
+    return str(value)
+
+
+def build_table(runs: list[dict]) -> str:
+    """Render the comparison as a markdown table.
+
+    Args:
+        runs: Loaded runs, in the order they should appear.
+
+    Returns:
+        A markdown table. Hyperparameter columns cover only the fields that
+        differ; with a single run there are none, and the table degrades to the
+        summary columns.
+    """
+    varying = differing_params(runs)
+    headers = ["Run", "Hash", *[k.split(".")[-1] for k in varying]]
+    headers += ["Best val acc", "Best epoch", "s/epoch", "Min", "Status"]
+
+    rows = []
+    for run in runs:
+        m = run["manifest"]
+        summary = m.get("summary", {})
+        runtime = m.get("runtime", {})
+        best_epoch = summary.get("best_epoch")
+        total = m.get("total_seconds")
+        rows.append(
+            [
+                f"`{run['dir'].as_posix()}`",
+                f"`{m.get('config_hash', '-')}`",
+                *[_cell(run["params"].get(k)) for k in varying],
+                f"{summary['best_val_acc']:.2f}" if "best_val_acc" in summary else "-",
+                str(int(best_epoch) + 1) if best_epoch is not None and best_epoch >= 0 else "-",
+                _cell(runtime.get("seconds_per_epoch")),
+                f"{total / 60:.1f}" if total is not None else "-",
+                m.get("status", "-"),
+            ]
+        )
+
+    lines = ["| " + " | ".join(headers) + " |", "|" + "---|" * len(headers)]
+    lines += ["| " + " | ".join(row) + " |" for row in rows]
+    return "\n".join(lines)
+
+
+def plot_comparison(runs: list[dict], out_path: Path) -> None:
+    """Overlay every run's val-accuracy curve on one axis.
+
+    Args:
+        runs: Loaded runs.
+        out_path: PNG to write; parent directories are created.
+    """
+    fig, ax = plt.subplots(figsize=(8, 5))
+    for run in runs:
+        points = [
+            (e["epoch"] + 1, e["val_acc"])
+            for e in run["epochs"]
+            if e.get("val_acc") == e.get("val_acc")  # drop NaN (skipped evals)
+        ]
+        if points:
+            ax.plot(*zip(*points), label=run["dir"].name, marker=".", markersize=3)
+    ax.set_xlabel("epoch")
+    ax.set_ylabel("val accuracy (%)")
+    ax.grid(alpha=0.3)
+    ax.legend(fontsize=8)
+    fig.tight_layout()
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_path, dpi=120, bbox_inches="tight")
+    plt.close(fig)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--runs", nargs="+", type=Path, default=[], help="Run directories.")
+    parser.add_argument("--all", action="store_true", help="Every run under --run-root.")
+    parser.add_argument("--run-root", type=Path, default=Path("runs"))
+    parser.add_argument("--out", type=Path, default=Path("docs"), help="Where the report lands.")
+    parser.add_argument("--title", default="", help="Section heading for the appended rows.")
+    args = parser.parse_args()
+
+    run_dirs = list(args.runs)
+    if args.all:
+        run_dirs += sorted(d for d in args.run_root.iterdir() if (d / "run_manifest.json").exists())
+    if not run_dirs:
+        raise SystemExit("Nothing to compare: pass --runs or --all")
+
+    runs = [load_run(d) for d in dict.fromkeys(run_dirs)]
+    table = build_table(runs)
+
+    figure_path = args.out / "figures" / "comparison.png"
+    plot_comparison(runs, figure_path)
+
+    title = args.title or f"Comparison {datetime.now():%Y-%m-%d %H:%M}"
+    section = (
+        f"\n## {title}\n\n{table}\n\n"
+        f"![val accuracy]({figure_path.relative_to(args.out).as_posix()})\n"
+    )
+    experiments = args.out / "EXPERIMENTS.md"
+    with open(experiments, "a", encoding="utf-8") as f:
+        f.write(section)
+
+    print(table)
+    print(experiments)
+
+
+if __name__ == "__main__":
+    main()
