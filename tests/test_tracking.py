@@ -1,0 +1,309 @@
+import json
+import sys
+from pathlib import Path
+
+import numpy as np
+import pytest
+
+from cifar.config import config_hash, load_config
+from cifar.engine.trainer import EpochMetrics, Trainer
+from cifar.models import build_model
+from cifar.tracking.logger import Logger
+from cifar.tracking.run import Run
+from cifar.utils.viz import (
+    plot_confusion_matrix,
+    plot_curves,
+    plot_lr_schedule,
+    plot_sample_predictions,
+)
+from tests.test_engine import cfg_for, tiny_loaders
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+import make_report  # noqa: E402
+
+
+def tb_scalars(run: Run) -> set[str]:
+    """Tags actually present in the run's TensorBoard event files."""
+    from tensorboard.backend.event_processing.event_accumulator import EventAccumulator
+
+    acc = EventAccumulator(str(run.tb_dir))
+    acc.Reload()
+    return set(acc.Tags()["scalars"])
+
+
+# --- run directory --------------------------------------------------------
+
+
+def test_run_dir_created_with_expected_structure(tmp_path):
+    run = Run(cfg_for(tmp_path))
+    assert (run.dir / "config.yaml").exists()
+    assert run.checkpoint_dir.is_dir()
+    assert run.figures_dir.is_dir()
+    assert run.tb_dir.is_dir()
+
+    run.write_manifest()
+    assert (run.dir / "run_manifest.json").exists()
+
+
+def test_manifest_captures_git_and_env(tmp_path):
+    cfg = cfg_for(tmp_path)
+    run = Run(cfg)
+    run.write_manifest()
+    m = json.loads((run.dir / "run_manifest.json").read_text())
+
+    assert "sha" in m["git"] and "dirty" in m["git"]
+    assert "torch" in m["env"] and "python" in m["env"] and "platform" in m["env"]
+    assert m["config_hash"] == config_hash(cfg)
+    assert m["status"] == "running"
+
+
+def test_manifest_records_resolved_device_and_memory_format(tmp_path):
+    """ADR-005 and ADR-007: neither is a detail, both are experimental variables."""
+    cfg = cfg_for(tmp_path, train__channels_last=False)
+    run = Run(cfg)
+    run.write_manifest()
+    runtime = json.loads((run.dir / "run_manifest.json").read_text())["runtime"]
+
+    assert runtime["device"] == "cpu"  # resolved, never "auto"
+    assert runtime["channels_last"] is False
+    assert runtime["seconds_per_epoch"] is None  # nothing measured yet
+
+
+def test_manifest_seconds_per_epoch_excludes_the_first_epoch(tmp_path):
+    """The first epoch carries fixed worker-spawn cost; it describes Windows,
+    not the model."""
+    run = Run(cfg_for(tmp_path))
+    rows = [{"epoch": i, "epoch_seconds": s} for i, s in enumerate([90.0, 4.0, 4.0, 6.0])]
+    (run.dir / "metrics.jsonl").write_text("\n".join(json.dumps(r) for r in rows) + "\n")
+
+    run.finalize({"best_val_acc": 1.0})
+    m = json.loads((run.dir / "run_manifest.json").read_text())
+    assert m["runtime"]["seconds_per_epoch"] == pytest.approx(4.0)
+    assert m["status"] == "completed"
+
+
+def test_saved_config_reloads_to_equal_config(tmp_path):
+    cfg = cfg_for(tmp_path, optim__learning_rate=0.037)
+    run = Run(cfg)
+    assert config_hash(load_config(run.dir / "config.yaml")) == config_hash(cfg)
+
+
+def test_run_name_collision_gets_a_suffix(tmp_path):
+    cfg = cfg_for(tmp_path, log__run_name="fixed")
+    assert Run(cfg).name == "fixed"
+    assert Run(cfg).name == "fixed_2"
+
+
+# --- logger ---------------------------------------------------------------
+
+
+def test_logger_writes_all_destinations(tmp_path):
+    cfg = cfg_for(tmp_path)
+    run = Run(cfg)
+    logger = Logger(run, cfg)
+    printed = []
+    logger._console.print = printed.append
+
+    logger.log_scalars({"acc": 91.2}, step=1, prefix="val")
+    logger.close()
+
+    assert any("91.2" in line for line in printed)
+    assert "91.2" in (run.dir / "train.log").read_text()
+    assert json.loads((run.dir / "metrics.jsonl").read_text().splitlines()[-1])["val_acc"] == 91.2
+    assert "val/acc" in tb_scalars(run)
+
+
+def test_logger_epoch_line_reports_the_best_so_far(tmp_path):
+    cfg = cfg_for(tmp_path, train__epochs=3, optim__warmup_epochs=1)
+    logger = Logger(Run(cfg), cfg)
+    printed = []
+    logger._console.print = printed.append
+
+    for epoch, acc in enumerate([80.0, 91.5, 88.0]):
+        logger.log_epoch(EpochMetrics(epoch, 1.0, 50.0, 1.0, acc, 0.1, 1.0))
+    logger.close()
+
+    assert "best 91.5% @2" in printed[-1]
+    assert all(line.isascii() for line in printed)
+
+
+def test_logger_skips_nan_in_tensorboard(tmp_path):
+    """A skipped eval must leave a gap, not a point at zero."""
+    cfg = cfg_for(tmp_path)
+    run = Run(cfg)
+    logger = Logger(run, cfg)
+    logger._console.print = lambda *a, **k: None
+    logger.log_epoch(EpochMetrics(0, 1.0, 50.0, float("nan"), float("nan"), 0.1, 1.0))
+    logger.close()
+
+    tags = tb_scalars(run)
+    assert "train/loss" in tags and "val/loss" not in tags
+
+
+def test_logger_can_run_without_tensorboard(tmp_path):
+    cfg = cfg_for(tmp_path, log__tensorboard=False)
+    run = Run(cfg)
+    logger = Logger(run, cfg)
+    logger._console.print = lambda *a, **k: None
+    logger.log_scalars({"acc": 1.0}, step=0, prefix="val")
+    logger.close()
+    assert (run.dir / "metrics.jsonl").exists()
+
+
+# --- figures --------------------------------------------------------------
+
+
+def test_lr_schedule_figure_matches_actual_lrs(tmp_path):
+    """The plotted schedule must describe what the trainer really does."""
+    cfg = cfg_for(tmp_path, train__epochs=3, optim__warmup_epochs=1)
+    loaders = tiny_loaders(n=32, batch_size=16)
+    steps_per_epoch = len(loaders[0])
+
+    plotted = plot_lr_schedule(cfg, steps_per_epoch).axes[0].lines[0].get_ydata()
+    assert len(plotted) == cfg.train.epochs * steps_per_epoch
+
+    run = Run(cfg)
+    Trainer(build_model(cfg), loaders, cfg, run).fit()
+    logged = [
+        json.loads(line)["learning_rate"]
+        for line in (run.dir / "metrics.jsonl").read_text().splitlines()
+    ]
+    # Epoch e is logged after (e + 1) * steps_per_epoch steps.
+    assert logged[0] == pytest.approx(plotted[steps_per_epoch], rel=1e-6)
+    assert logged[1] == pytest.approx(plotted[2 * steps_per_epoch], rel=1e-6)
+
+
+def test_plot_curves_marks_the_best_epoch(tmp_path):
+    rows = [
+        {
+            "epoch": e,
+            "train_loss": 1.0 - e / 10,
+            "train_acc": 50.0 + e,
+            "val_loss": 1.0,
+            "val_acc": 60.0 + e,
+            "learning_rate": 0.1,
+            "epoch_seconds": 1.0,
+        }
+        for e in range(4)
+    ]
+    path = tmp_path / "metrics.jsonl"
+    path.write_text("\n".join(json.dumps(r) for r in rows) + "\n")
+
+    fig = plot_curves(path)
+    assert len(fig.axes) == 2
+    assert any("best 63.00% @4" in t.get_text() for t in fig.axes[1].texts)
+
+
+def test_plot_curves_rejects_an_empty_metrics_file(tmp_path):
+    path = tmp_path / "metrics.jsonl"
+    path.write_text("")
+    with pytest.raises(ValueError, match="no epochs"):
+        plot_curves(path)
+
+
+def test_plot_confusion_matrix_normalizes_rows(tmp_path):
+    cm = np.array([[8, 2], [0, 10]])
+    fig = plot_confusion_matrix(cm, ["cat", "dog"], normalize=True)
+    assert {t.get_text() for t in fig.axes[0].texts} == {"80.0", "20.0", "0.0", "100.0"}
+
+
+def test_plot_sample_predictions_labels_every_tile(tmp_path):
+    cfg = cfg_for(tmp_path)
+    _, loader = tiny_loaders(n=16, batch_size=16)
+    fig = plot_sample_predictions(build_model(cfg), loader, n=4)
+    assert sum(1 for ax in fig.axes if ax.get_title()) == 4
+
+
+def test_interrupt_marks_the_manifest_and_resumes_from_a_clean_epoch(tmp_path):
+    """Regression (ADR-009): Ctrl-C used to overwrite last.pth with the *partial*
+    epoch's weights under the interrupted epoch's number, so the resumed run
+    skipped that epoch entirely and ran the schedule short."""
+    cfg = cfg_for(tmp_path, train__epochs=5, optim__warmup_epochs=1)
+    run = Run(cfg)
+    trainer = Trainer(build_model(cfg), tiny_loaders(n=32), cfg, run)
+
+    real_epoch = trainer.train_one_epoch
+
+    def interrupt_during_epoch_2(epoch: int):
+        if epoch == 2:
+            raise KeyboardInterrupt
+        return real_epoch(epoch)
+
+    trainer.train_one_epoch = interrupt_during_epoch_2
+    summary = trainer.fit()
+
+    manifest = json.loads((run.dir / "run_manifest.json").read_text())
+    assert manifest["status"] == "interrupted"
+    assert summary["epochs_completed"] == 2  # epochs 0 and 1, not the aborted 2
+
+    resumed = Trainer(build_model(cfg), tiny_loaders(n=32), cfg, Run(cfg))
+    resumed.resume_from(run.checkpoint_dir / "last.pth")
+    assert resumed.start_epoch == 2  # redo the interrupted epoch, never skip it
+    assert resumed.fit()["epochs_completed"] == 5
+
+
+def test_fit_writes_the_expected_figures(tmp_path):
+    cfg = cfg_for(tmp_path, train__epochs=1, optim__warmup_epochs=0)
+    run = Run(cfg)
+    Trainer(build_model(cfg), tiny_loaders(n=32), cfg, run).fit()
+    for name in ("lr_schedule", "curves", "confusion_matrix"):
+        assert (run.figures_dir / f"{name}.png").exists()
+
+
+# --- comparison report ----------------------------------------------------
+
+
+def _fake_run(root: Path, name: str, **params) -> Path:
+    """A minimal finished run directory: manifest plus two epochs."""
+    d = root / name
+    d.mkdir(parents=True)
+    manifest = {
+        "run_name": name,
+        "config_hash": name,
+        "config": {
+            "optim": {"learning_rate": params.get("lr", 0.1), "weight_decay": 5e-4},
+            "train": {"channels_last": params.get("channels_last", False), "epochs": 2},
+            "log": {"run_name": name},
+        },
+        "runtime": {
+            "device": "cuda",
+            "channels_last": params.get("channels_last", False),
+            "seconds_per_epoch": params.get("spe", 4.5),
+        },
+        "status": "completed",
+        "total_seconds": 120.0,
+        "summary": {"best_val_acc": params.get("acc", 90.0), "best_epoch": 1},
+    }
+    (d / "run_manifest.json").write_text(json.dumps(manifest))
+    (d / "metrics.jsonl").write_text(
+        "\n".join(
+            json.dumps({"epoch": e, "val_acc": params.get("acc", 90.0) - (1 - e)}) for e in range(2)
+        )
+    )
+    return d
+
+
+def test_report_shows_only_the_differing_hyperparameter(tmp_path):
+    runs = [
+        make_report.load_run(_fake_run(tmp_path, "a", channels_last=False, spe=4.5)),
+        make_report.load_run(_fake_run(tmp_path, "b", channels_last=True, spe=13.1)),
+    ]
+    assert make_report.differing_params(runs) == ["train.channels_last"]
+
+    table = make_report.build_table(runs)
+    assert "channels_last" in table
+    assert "weight_decay" not in table  # identical across runs
+    assert "4.5" in table and "13.1" in table
+
+
+def test_report_writes_an_overlaid_curve(tmp_path):
+    runs = [make_report.load_run(_fake_run(tmp_path, n)) for n in ("a", "b")]
+    out = tmp_path / "docs" / "figures" / "comparison.png"
+    make_report.plot_comparison(runs, out)
+    assert out.exists()
+
+
+def test_load_run_refuses_a_directory_without_a_manifest(tmp_path):
+    (tmp_path / "empty").mkdir()
+    with pytest.raises(FileNotFoundError):
+        make_report.load_run(tmp_path / "empty")
