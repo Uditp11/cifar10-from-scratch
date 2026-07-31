@@ -99,6 +99,10 @@ The first epoch costs an extra 60–75 s on Windows: `num_workers=4` on both the
 
 **Sprint 3 — NHWC is not free.** See ADR-007. The reflex to enable `channels_last` alongside AMP is ImageNet advice; at 32×32 with CIFAR channel counts it cost 3× the wall clock on this GPU. It is worth a single measured run before adopting any "standard" performance recipe at an unusual input size.
 
+**Sprint 4 — ADR-007 re-measured end to end, and the penalty is 2.2×, not 3×.** The channels_last A/B below is the first comparison produced by `make_report.py` rather than by a hand-run benchmark, and it disagrees slightly with ADR-007's table: 14.36 vs 6.54 s/epoch, a 2.2× penalty where the sprint-3 micro-benchmark said 2.9×. The difference is what a full epoch contains that a `ms/step` loop does not — validation over 5,000 images, checkpoint writes, logging — all of which are format-independent and dilute the ratio. Both numbers are correct about their own question; the run-level one is the one that predicts wall clock, so it is the one the epoch budgets should be read against. The direction is unchanged and ADR-007 stands. Val accuracy differed by 0.54% in NHWC's favour, which at 6 epochs is well inside seed noise and is not evidence of anything.
+
+**Sprint 4 — the gate found a resume bug that no accuracy number would have.** Ctrl-C used to write `last.pth` from a half-finished epoch under that epoch's number, so resuming skipped it and left the LR schedule short of `min_learning_rate` (ADR-009). Nothing in a metrics file looks wrong when this happens — the run reports its full epoch count and a plausible curve. It took an explicit "kill it and resume it" step in the gate to see it, which is an argument for gates that exercise the failure paths rather than only the happy one.
+
 Write these as you go, in prose, one short paragraph each. The table holds the numbers; this section holds the understanding. Candidates that usually turn out to be worth writing up:
 
 - How much basic augmentation (crop + flip) is actually worth. Expect the largest single delta in the whole document.
@@ -107,3 +111,16 @@ Write these as you go, in prose, one short paragraph each. The table holds the n
 - Whether mixup/cutmix helped at 120 epochs vs 200 — and why the answer differs.
 - Label smoothing's effect on accuracy vs its effect on calibration.
 - Seed-to-seed variance, and what that implies about how precisely any single-run CIFAR number should be read.
+
+---
+
+*Everything below this line is appended by `scripts/make_report.py`. Don't hand-edit it.*
+
+## Sprint 4 - channels_last A/B (SimpleCNN, 6 epochs)
+
+| Run | Hash | channels_last | Best val acc | Best epoch | s/epoch | Min | Status |
+|---|---|---|---|---|---|---|---|
+| `runs/cl_off` | `e52f6720740b` | False | 86.38 | 6 | 6.54 | 1.8 | completed |
+| `runs/cl_on` | `b23f6d51ffa0` | True | 86.92 | 6 | 14.36 | 2.5 | completed |
+
+![val accuracy](figures/comparison.png)
