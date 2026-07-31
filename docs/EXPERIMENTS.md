@@ -21,13 +21,26 @@ Fill in once, in Sprint 3, so every timing below is interpretable.
 
 Laptop GPU — record whether the machine was plugged in and on the "Best performance" power profile, since thermal throttling on runs over an hour is the main source of timing variance between otherwise identical runs.
 
+**Sprint 3 conditions:** plugged in, Best-performance profile. Under sustained load the GPU held 2580 MHz at 65–68 °C with no throttle flags set; an fp16 4096³ matmul benchmarked at 28.9 TFLOPS, so the card is delivering its clocks. No run in this sprint exceeded 4 minutes, so none of these numbers carry thermal decay.
+
+### Measured epoch times
+
+Batch 128, AMP on, `channels_last` off (ADR-007). Steady-state excludes the first epoch.
+
+| Model | s/epoch | First epoch | Notes |
+|---|---|---|---|
+| SimpleCNN | 4.4 (4.27–4.63 mean) | 65.6 s | 351 steps/epoch |
+| ResNet-18-CIFAR | 13.6 (13.5–13.7) | 79.9 s | measured over 5 epochs |
+
+The first epoch costs an extra 60–75 s on Windows: `num_workers=4` on both the train and val loaders means eight worker processes spawn and each unpickles its own copy of the CIFAR-10 split. Fixed per run, so it matters at 30 epochs and disappears at 300.
+
 ---
 
 ## Sprint 3 — Baseline
 
 | ID | Run | Config hash | Model | Epochs | Val acc | Test acc | Min | Notes |
 |---|---|---|---|---|---|---|---|---|
-| E0 | | | simple_cnn | 30 | | | | Sanity baseline, gate M4 (≥85%) |
+| E0 | `runs/simple_cnn_20260801_004212` | `939482835ef3` | simple_cnn | 30 | **93.02** (best, ep 27) | 91.55 | 3.3 | Gate M4 (≥85%) passed by 8 points. Final-epoch val 92.60 / test 91.76. |
 
 ## Sprint 5 — The 94% recipe
 
@@ -74,8 +87,17 @@ Laptop GPU — record whether the machine was plugged in and on the "Best perfor
 
 - `random_crop_padding` uses `padding_mode="reflect"` (`build_train_transform`, sprint 1). Zero padding is the
   classic recipe and is worth testing in Sprint 5.
+- `channels_last` is off by default (ADR-007) because it measured 3× slower here. Re-measure on any other GPU
+  before assuming that still holds — it is one config flag.
+- The val loader runs `num_workers=4` to serve ten batches of 512. Four worker spawns almost certainly cost more
+  than they save, and they are half of the 60–75 s first-epoch penalty. Worth measuring against `num_workers=0`
+  on the eval loaders.
 
 ## Findings
+
+**Sprint 3 — the val/test gap is mostly checkpoint selection, not a split bug.** The gate run's best checkpoint scores 93.02% val and 91.55% test, a 1.47% gap wide enough to be worth chasing. Evaluating the *final* checkpoint instead gives 92.60% val and 91.76% test — a 0.84% gap. The difference between the two gaps is the price of picking the best of 30 epochs by val accuracy: roughly 0.6% of apparent accuracy that does not survive contact with data the selection never saw. The residual ~0.85% is the genuine val/test offset, consistent with held-out train-split data being slightly easier than CIFAR-10's official test split. Nothing here indicates a transform or split defect — but it does mean **every val number in this document is optimistic by roughly half a point** relative to what the test set will say, and cross-run comparisons on val are only fair because every run pays the same tax.
+
+**Sprint 3 — NHWC is not free.** See ADR-007. The reflex to enable `channels_last` alongside AMP is ImageNet advice; at 32×32 with CIFAR channel counts it cost 3× the wall clock on this GPU. It is worth a single measured run before adopting any "standard" performance recipe at an unusual input size.
 
 Write these as you go, in prose, one short paragraph each. The table holds the numbers; this section holds the understanding. Candidates that usually turn out to be worth writing up:
 

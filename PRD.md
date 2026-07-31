@@ -51,7 +51,18 @@ Explicitly out of scope for v1. Listing these prevents scope creep mid-sprint.
 - **Hardware:** RTX 4060 Laptop GPU (8 GB) + i7-14700HX. All budgets assume batch size 128 with AMP enabled. VRAM is not a constraint here — ResNet-18 on 32×32 inputs at batch 128 uses under 2 GB — but laptop thermals are, so expect ~10–15% throughput decay on runs over an hour.
 - **Python** 3.10+, **PyTorch** 2.x, CUDA available but code must degrade gracefully to CPU (slow) for tests.
 - **Dependencies:** `torch`, `torchvision` (for the *dataset download only*, plus `ToTensor`), `numpy`, `pyyaml`, `tensorboard`, `matplotlib`, `rich`. Anything else needs a note in the ADR log.
-- **Epoch budget reference** (batch 128, AMP, channels_last, RTX 4060 Laptop): SimpleCNN ≈ 5–6 s/epoch, ResNet-18-CIFAR ≈ 14–18 s/epoch. Measure yours in Sprint 3 and replace these estimates. At ~16 s/epoch: 120 ep ≈ 32 min (inside the M3 budget), 200 ep ≈ 53 min, 300 ep ≈ 80 min. Total GPU time across Sprints 5–7 ≈ 16–18 h.
+- **Epoch budget reference — MEASURED in Sprint 3** (batch 128, AMP on, `channels_last` **off** per ADR-007, RTX 4060 Laptop, plugged in, Best-performance profile):
+
+  | Model | s/epoch (steady) | First epoch | 30 ep | 120 ep | 200 ep | 300 ep |
+  |---|---|---|---|---|---|---|
+  | SimpleCNN | **4.4** | 66 s | 3.3 min | 10 min | 16 min | 23 min |
+  | ResNet-18-CIFAR | **13.6** | 80 s | 8 min | **28 min** | 46 min | 69 min |
+
+  The first epoch costs an extra ~60–75 s on Windows: eight dataloader workers spawn and each unpickles its own copy of the CIFAR-10 split. It is a fixed cost per run, so it is 20% of a 30-epoch run and under 2% of a 300-epoch one. Every figure above includes it.
+
+  ResNet-18 at 120 epochs is **28 min**, inside the M3 45-minute budget with room to spare. Total GPU time across Sprints 5–7 ≈ 15 h, or ~17 h allowing for the 10–15% thermal decay on runs over an hour.
+
+  These replace the pre-sprint estimates (SimpleCNN 5–6 s, ResNet-18 14–18 s), which were close but assumed `channels_last` was a win — it is a 3× loss at this resolution (ADR-007).
 
 ## 6. Architecture
 

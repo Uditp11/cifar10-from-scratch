@@ -41,7 +41,12 @@ def main() -> None:
 
     result = evaluate(model, test_loader, cfg, tta=args.tta)
 
-    print(f"checkpoint  {ckpt_path} (epoch {meta['epoch'] + 1}, val {meta['best_metric']:.2f}%)")
+    # best_metric is the run's best-so-far, not this checkpoint's own val score
+    # -- they coincide for best.pth and generally do not for last.pth.
+    print(
+        f"checkpoint  {ckpt_path} (epoch {meta['epoch'] + 1}, "
+        f"best val so far {meta['best_metric']:.2f}%)"
+    )
     print(f"test loss   {result.loss:.4f}")
     print(f"test top-1  {result.top1:.2f}%   top-5 {result.top5:.2f}%   n={result.num_samples}")
     print("\nper-class accuracy")
