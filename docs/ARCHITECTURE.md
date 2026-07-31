@@ -95,7 +95,7 @@ class Config:
     train: TrainConfig
     repro: ReproConfig
     log: LogConfig
-    device: str = "cuda"
+    device: str = "auto"   # auto | cuda | cpu — "auto" resolves at load time
     notes: str = ""
 ```
 
@@ -118,10 +118,13 @@ def config_hash(cfg: Config) -> str:
 **Invariants validated at load:**
 - `0 <= warmup_epochs < epochs`
 - `0 < val_size < 50000`
-- `mixup_alpha` and `cutmix_alpha` may both be > 0 (they alternate per batch), but at least one must be 0 if `batch_aug_prob == 0`
+- **Batch-aug coherence**, both directions — a config that silently does nothing is the bug being prevented:
+  - `batch_aug_prob > 0` requires `mixup_alpha > 0 or cutmix_alpha > 0` (a probability with nothing to apply)
+  - `batch_aug_prob == 0` requires `mixup_alpha == 0 and cutmix_alpha == 0` (an alpha that can never fire)
+  - both alphas may be > 0 simultaneously; `apply_batch_aug` chooses between them per batch
 - `model.name` is registered
 - `optimizer` and `scheduler` are known strings
-- `device == "cuda"` requires `torch.cuda.is_available()`, else raise with a clear message
+- `device` is one of `auto | cuda | cpu`. `"auto"` resolves to `"cuda"` when `torch.cuda.is_available()` else `"cpu"`, and the resolved value is what lands in the frozen `Config` (so `run_manifest.json` records what actually ran). Explicit `device: cuda` without CUDA raises — an explicit request must never be silently downgraded.
 
 ---
 

@@ -1,4 +1,5 @@
 from dataclasses import FrozenInstanceError
+from pathlib import Path
 
 import pytest
 
@@ -48,3 +49,39 @@ def test_hash_stable_and_sensitive():
     c = load_config("configs/base.yaml", ["optim.learning_rate=0.05"])
     assert config_hash(a) == config_hash(b)  # notes excluded
     assert config_hash(a) != config_hash(c)
+
+
+def test_batch_aug_prob_positive_requires_an_alpha():
+    with pytest.raises(ValueError, match="batch_aug_prob"):
+        load_config(
+            "configs/base.yaml",
+            ["aug.batch_aug_prob=0.5", "aug.mixup_alpha=0.0", "aug.cutmix_alpha=0.0"],
+        )
+
+
+def test_batch_aug_prob_zero_requires_no_alpha():
+    with pytest.raises(ValueError, match="batch_aug_prob"):
+        load_config(
+            "configs/base.yaml",
+            ["aug.batch_aug_prob=0.0", "aug.mixup_alpha=0.2", "aug.cutmix_alpha=0.0"],
+        )
+
+
+def test_override_coerces_tuple_of_int():
+    cfg = load_config("configs/base.yaml", ["optim.step_milestones=30,60,90"])
+    assert cfg.optim.step_milestones == (30, 60, 90)
+
+
+def test_override_coerces_path():
+    cfg = load_config("configs/base.yaml", ["data.root=/tmp/x"])
+    assert cfg.data.root == Path("/tmp/x")
+
+
+def test_override_coerces_none():
+    cfg = load_config("configs/base.yaml", ["log.run_name=none"])
+    assert cfg.log.run_name is None
+
+
+def test_simplecnn_config_loads():
+    cfg = load_config("configs/simplecnn.yaml")
+    assert cfg.model.name == "simple_cnn"

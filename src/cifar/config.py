@@ -303,8 +303,6 @@ def _validate(cfg: Config) -> None:
         raise ValueError(f"optimizer ({cfg.optim.optimizer!r}) must be one of {_KNOWN_OPTIMIZERS}")
     if cfg.optim.scheduler not in _KNOWN_SCHEDULERS:
         raise ValueError(f"scheduler ({cfg.optim.scheduler!r}) must be one of {_KNOWN_SCHEDULERS}")
-    if cfg.device == "cuda" and not torch.cuda.is_available():
-        raise ValueError("device ('cuda') requires torch.cuda.is_available() to be True")
 
 
 def load_config(path: str | Path, overrides: list[str] | None = None) -> Config:
