@@ -22,3 +22,9 @@ pip install -e ".[dev]"
 | `eval` | `python scripts/eval.py` |
 | `clean` | remove `runs/`, `.pytest_cache/`, `.ruff_cache/`, `__pycache__` dirs |
 | `repro-check` | `python scripts/train.py repro.deterministic=true` |
+
+## Windows notes
+
+- `DataLoader(num_workers > 0)` uses spawn-based multiprocessing on Windows, which
+  re-imports the launching module in each worker. Any script that builds one must
+  guard the call behind `if __name__ == "__main__":` (see `scripts/inspect_data.py`).
