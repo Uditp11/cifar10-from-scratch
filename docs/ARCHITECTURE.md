@@ -65,7 +65,7 @@ class OptimConfig:
 class TrainConfig:
     epochs: int = 120
     amp: bool = True
-    channels_last: bool = True
+    channels_last: bool = False        # 3x slower at 32x32 — measured, ADR-007
     ema_decay: float = 0.0             # 0 disables
     ema_warmup_epochs: int = 0
     eval_every: int = 1

@@ -100,7 +100,7 @@ def test_confusion_matrix_rows_sum_to_class_counts():
 
 ## Gate
 
-- Final val accuracy **≥ 95.5%** (stretch; ≥95.0% is an acceptable landing if documented with a hypothesis).
+- Final val accuracy **≥ 96.0%** (≈95.5% test after the selection-bias allowance) (stretch; ≥95.0% is an acceptable landing if documented with a hypothesis).
 - Three-seed result reported as mean ± std.
 - `docs/MODEL_CARD.md` complete.
 - Error analysis figures and the reliability diagram in `docs/figures/`.

@@ -34,9 +34,11 @@ Explicitly out of scope for v1. Listing these prevents scope creep mid-sprint.
 
 ## 4. Success metrics
 
+> **Val reads optimistic — budget for it.** Measured in Sprint 3: the *final* checkpoint showed a 0.84% val/test gap, but the *best-of-N* checkpoint showed 1.47%. The extra ~0.6% is selection bias — picking the best of 30 val evaluations captures some of val's own noise (σ ≈ 0.36% on a 5,000-image split). Since M1 is stated on **test** while the sprint gates are stated on **val**, every val gate below carries a ~0.5% headroom allowance. Hitting exactly 94.0% val would likely land ~93.5% test and miss M1.
+
 | # | Metric | Target | How it's measured |
 |---|--------|--------|-------------------|
-| M1 | Test accuracy, primary model | ≥ 94.0% (stretch 95.5%) | `eval.py` on the 10,000-image test set, final epoch weights |
+| M1 | Test accuracy, primary model | ≥ 94.0% (stretch 95.5%) | `eval.py` on the 10,000-image test set, best checkpoint |
 | M2 | Reproducibility | Two runs, same seed+config → top-1 identical to within **±0.15%** | `make repro-check` runs the same config twice, diffs the metrics |
 | M3 | Wall-clock to target | ≤ 45 min for the 94% recipe | `run_manifest.json` records total train seconds |
 | M4 | Baseline sanity | SimpleCNN ≥ 85% in ≤ 30 epochs | Sprint 2 acceptance run |
@@ -208,9 +210,11 @@ S1 and S2 are parallelizable. Everything after S3 is strictly sequential because
 
 The number the project reports must climb in a documented, attributable way. Each row is one experiment in `EXPERIMENTS.md`.
 
+Bands below were written for the recipe named in each row. **Stage A came in at 93.0% val / 91.6% test, well above its 85–88% band — because the run used the `base.yaml` recipe (SGD + Nesterov + warmup + cosine), not the plain Adam the row assumed.** Not an anomaly; the band was written for a weaker configuration. Later stages are less exposed to this since they specify their recipe fully.
+
 | Stage | Configuration | Expected test acc | Sprint |
 |---|---|---|---|
-| A | SimpleCNN, 30 ep, Adam, flip+crop | 85–88% | 3 |
+| A | SimpleCNN, 30 ep, Adam, flip+crop | 85–88% (actual, w/ SGD recipe: 91.6%) | 3 |
 | B | ResNet-18-CIFAR, 30 ep, SGD 0.1, step LR, flip+crop | 91–93% | 5 |
 | C | + Nesterov, 5-ep warmup, cosine to 0, 120 ep, wd 5e-4 | 94.5–95.3% | 5 |
 | D | + label smoothing 0.1 | +0.1–0.3% | 5 |

@@ -137,7 +137,7 @@ def test_no_augmentation_at_eval_time():
 
 ## Gate
 
-Best configuration reaches **≥ 95.0%** val accuracy, all eight ablation rows are in `EXPERIMENTS.md`, and the visual inspection grid confirms each augmentation looks right.
+Best configuration reaches **≥ 95.5%** val accuracy (≈95.0% test after the selection-bias allowance), all eight ablation rows are in `EXPERIMENTS.md`, and the visual inspection grid confirms each augmentation looks right.
 
 ---
 

@@ -75,7 +75,7 @@ Append all nine rows to `docs/EXPERIMENTS.md` with run directory, config hash, b
 
 ## Acceptance criteria
 
-- Full recipe run reaches **≥ 94.0%** best val accuracy. *(Gate)*
+- Full recipe run reaches **≥ 94.5% best val accuracy** *(Gate)*. Raised from 94.0% after Sprint 3 measured a ~0.6% selection-bias inflation in best-of-N val numbers — M1 is a **test**-set target, so the val gate needs headroom. Confirm with `eval.py` that test lands ≥ 94.0%.
 - Wall-clock ≤ 45 minutes for that run (PRD **M3**). Report actual s/epoch.
 - All 9 ablation runs completed, logged, and present in `EXPERIMENTS.md`.
 - `docs/figures/lr_finder.png` exists and supports the LR choice.
