@@ -61,15 +61,36 @@ curve. The first real use of it was confirming ADR-007 against full training run
 | `runs/r18_cl_on` | `d60ad5395da4` | True | 89.34 | **38.78** | 8.8 |
 
 NHWC costs 2.80× the wall clock at 32×32 on this GPU, against the 2.90× that ADR-007's per-step
-benchmark predicted, and buys no accuracy. Two things make that number readable, both learned the
-hard way in Sprint 4:
+benchmark predicted, and buys no accuracy. That 4% agreement is the useful part: a per-step proxy is
+trustworthy exactly when the model saturates the card, and misleading when it doesn't.
+
+Each `--section` owns a sentinel-delimited region of `EXPERIMENTS.md` and regenerating rewrites only
+that region — the hand-written findings around it are safe by construction (ADR-010). A run that
+turns out to be wrong is retracted in place, by adding `"retracted": {"reason": ..., "date": ...}`
+to its `run_manifest.json`; the row stays, struck through, with the reason visible.
+
+## Measuring performance: SimpleCNN is not an instrument
+
+A model too small to pull the GPU out of a low power state has epoch times that depend on **what ran
+before it**. Measured in Sprint 4, identical config and identical commit:
+
+| Model | Session A | Session B | Spread |
+|---|---|---|---|
+| SimpleCNN | 4.4 s/epoch | 6.4 s/epoch | ±20%, not reproducible |
+| ResNet-18-CIFAR | 13.2 s/epoch | 13.8 s/epoch | ±4% |
+
+ResNet-18 saturates the card, so it always clocks up and its timings repeat. SimpleCNN never draws
+enough to leave a lower power state, so its number is a fact about the preceding minute rather than
+about the model. **Run performance A/Bs on the model that loads the hardware.**
+
+Two more things distort a naive reading of any timing here:
 
 - `s/epoch` is the median of the run's **back half**. Epoch times ramp for several epochs — about 3
   for ResNet-18, 7 for SimpleCNN — on top of the fixed 60–75 s of DataLoader worker spawn that every
   Windows run pays in epoch 1. **A run under ~10 epochs cannot measure a steady state at all.**
-- The A/B is on ResNet-18, not SimpleCNN, because SimpleCNN's epoch time is not reproducible across
-  sessions (4.4 s vs 6.4 s, same config, same commit) while ResNet-18 holds ±4%. Measure performance
-  on the model that actually loads the hardware — see `PRD.md` §5.
+- `sweep.py` runs jobs back to back, so later runs start on a hotter card and run order becomes
+  confounded with temperature. Every manifest records `gpu_temp_start_c` / `gpu_temp_end_c` to make
+  that visible; within a sweep, only the accuracy columns compare across rows.
 
 Sweeps run a directory of configs back to back, continuing past a failure:
 
