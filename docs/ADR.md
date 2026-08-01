@@ -88,6 +88,18 @@ Any deviation from `ARCHITECTURE.md`, any added dependency, and any decision tha
 
 **Consequences.** `Trainer.fit` labels its own exit: `completed`, `interrupted` on Ctrl-C, `failed` in an `except` that re-raises. A run directory therefore never sits at `status: "running"` after the process has gone.
 
+### Addendum — 2026-08-01, sprint 5: that last sentence was wrong
+
+**What happened.** Three of sprint 5's eight ablations died when the console that launched the sweep was torn down. `abl_step_lr` was killed ~30 s in with `0x40010004` (`DBG_TERMINATE_PROCESS`); the two that had not started yet exited `0xC000026B` (`STATUS_DLL_INIT_FAILED_LOGOFF`) — Python could not load its DLLs because the session was already shutting down. `runs/resnet18_cifar_20260801_061849` sat at `status: "running"` for fourteen hours afterwards.
+
+**Why the original reasoning failed.** The consequence above holds for every exit *Python can observe*. `finally` runs on a normal return, on an exception, on `KeyboardInterrupt`. It does not run on `TerminateProcess`, on a console/logoff teardown, or on power loss — the process is destroyed without executing another instruction. Nothing the writer does can close this: at the moment the status becomes wrong, the only party who could correct it no longer exists.
+
+**Decision.** Leave `finalize` alone; the writing side was never the problem. Move the fix to the *reading* side. `Run.write_manifest` now records `process: {pid, host}` before epoch 0, and `make_report.reaped_status` renders a `running` run whose PID is no longer live as **`killed`**.
+
+**Conservative on purpose.** A manifest with no `process` block (anything written before this addendum) or one produced on a different host is left at `running`. Reporting a live run as dead is a worse failure than the reverse — a stale `running` is a puzzle, a false `killed` is a wrong claim in the ledger. PID reuse is likewise undetected and errs the same way; closing that needs process creation times and therefore `psutil`, which is not worth a dependency here.
+
+**Consequences.** `status: "running"` in a manifest now means "running, or killed on another machine, or killed before this addendum" rather than "running". The table is where the question gets settled, and `killed` is a fifth rendered status that `finalize` itself can never write. Separately, `sweep.py --detach` removes the common cause: a sweep with no parent console cannot be killed by one closing.
+
 ---
 
 ## ADR-007 — `channels_last` defaults to off

@@ -13,6 +13,7 @@ variable, not a detail), and the measured steady-state seconds per epoch.
 from __future__ import annotations
 
 import json
+import os
 import platform
 import statistics
 import subprocess
@@ -180,6 +181,13 @@ class Run:
             "config": config_to_dict(self._cfg),
             "git": _git_info(),
             "env": _env_info(),
+            # ADR-006 addendum: `status` is written by the process describing
+            # itself, so a kill that runs no `finally` -- TerminateProcess, a
+            # console teardown, a power event -- strands the manifest at
+            # "running" forever. The PID is what lets a *reader* settle it
+            # later. Paired with the host, because a PID from another machine
+            # says nothing about a process on this one.
+            "process": {"pid": os.getpid(), "host": platform.node()},
             "runtime": {
                 "device": self._cfg.device,
                 "channels_last": self._cfg.train.channels_last,

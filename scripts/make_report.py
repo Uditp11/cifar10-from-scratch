@@ -25,6 +25,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import platform
+import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -43,6 +46,67 @@ def _flatten(prefix: str, value: Any) -> dict[str, Any]:
     for key, sub in value.items():
         flat.update(_flatten(f"{prefix}.{key}" if prefix else key, sub))
     return flat
+
+
+def _pid_is_live(pid: int) -> bool:
+    """Is a process with this PID currently running on this machine?
+
+    ponytail: PID reuse is not detected -- a recycled PID reads as live and the
+    run stays "running". Recording the process creation time alongside the PID
+    would close that, and needs `psutil`; not worth a dependency for a reaper
+    whose failure mode is being too cautious.
+    """
+    if pid <= 0:
+        return False
+    if sys.platform == "win32":
+        import ctypes
+
+        # 0x1000 = PROCESS_QUERY_LIMITED_INFORMATION: succeeds for processes
+        # this user cannot open for reading, which PROCESS_QUERY_INFORMATION
+        # would fail on and be misread as "dead".
+        handle = ctypes.windll.kernel32.OpenProcess(0x1000, False, pid)
+        if handle:
+            ctypes.windll.kernel32.CloseHandle(handle)
+            return True
+        # ERROR_ACCESS_DENIED means it exists but belongs to someone else.
+        return ctypes.windll.kernel32.GetLastError() == 5
+    try:
+        os.kill(pid, 0)  # signal 0 tests existence without delivering anything
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def reaped_status(manifest: dict[str, Any]) -> str:
+    """The manifest's status, with a stranded `running` resolved to `killed`.
+
+    ADR-006 argued a run never sits at `running` once its process is gone,
+    because `Trainer.fit` labels its own exit in a `finally`. That holds for
+    every exit Python can observe, and not for the ones it cannot: a
+    TerminateProcess, a console teardown, a power event. Sprint 5 lost three
+    ablations to exactly this and left a manifest reading `running` fourteen
+    hours later. The writer cannot fix it -- it is already gone -- so the reader
+    does, by asking whether the recorded PID is still live.
+
+    Conservative by construction: a run whose manifest predates the `process`
+    block, or that was produced on another machine, is left alone. Reporting a
+    live run as killed is a worse error than reporting a dead one as running.
+
+    Args:
+        manifest: A parsed `run_manifest.json`.
+
+    Returns:
+        `"killed"` for a stranded run, otherwise the recorded status.
+    """
+    if manifest.get("status") != "running":
+        return manifest.get("status", "-")
+    process = manifest.get("process") or {}
+    pid, host = process.get("pid"), process.get("host")
+    if not isinstance(pid, int) or host != platform.node():
+        return "running"
+    return "running" if _pid_is_live(pid) else "killed"
 
 
 def load_run(run_dir: Path) -> dict[str, Any]:
@@ -132,7 +196,7 @@ def build_table(runs: list[dict]) -> str:
             strike(_cell(runtime.get("seconds_per_epoch"))),
             "/".join(_cell(t) for t in temps),
             f"{total / 60:.1f}" if total is not None else "-",
-            m.get("status", "-"),
+            reaped_status(m),
         ]
         if retracted:
             note = m.get("retracted") or {}

@@ -92,11 +92,38 @@ Two more things distort a naive reading of any timing here:
   confounded with temperature. Every manifest records `gpu_temp_start_c` / `gpu_temp_end_c` to make
   that visible; within a sweep, only the accuracy columns compare across rows.
 
-Sweeps run a directory of configs back to back, continuing past a failure:
+Sweeps run a directory of configs back to back, continuing past a failure. Check what will run:
 
 ```bash
 python scripts/sweep.py --dir configs/ablations/ --dry-run
 ```
+
+Then launch it **detached** — this is the standard way to start any sweep, not a recovery step:
+
+```bash
+python scripts/sweep.py --dir configs/ablations/ --detach
+```
+
+`--detach` prints a PID and a log path and returns immediately; the sweep keeps running with no
+parent console to be killed by. `tail -f` the log to watch it.
+
+An attached sweep dies with the terminal that started it, and the failure is expensive and silent:
+sprint 5 lost three of eight ablations that way. The one that was mid-startup was killed with
+`0x40010004` (`DBG_TERMINATE_PROCESS`); the two that had not begun exited `0xC000026B`
+(`STATUS_DLL_INIT_FAILED_LOGOFF`) — Python could not even load its DLLs, because the session was
+already shutting down. None of those exit codes says "training problem", and all three cost a
+re-run. At sprint 6's ~8 hours of sweeps, launching attached is a bet on nothing closing a terminal
+for a working day.
+
+Two related habits for long unattended runs:
+
+- **Stop the machine sleeping.** `powercfg /change standby-timeout-ac 0`. A GPU-only workload does
+  not reset Windows' idle timer, so the default 3-hour AC standby will suspend a sweep that is
+  working perfectly. Plugged in, "Best performance", hard surface.
+- **A killed run is visible in the table.** Manifests record `process: {pid, host}`, and
+  `make_report.py` renders a run still marked `running` whose PID is gone as `killed` (ADR-006
+  addendum). A process destroyed by `TerminateProcess` runs no `finally` and cannot label its own
+  exit, so the reader settles it instead of the writer.
 
 ## Windows notes
 

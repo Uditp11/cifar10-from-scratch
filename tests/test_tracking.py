@@ -383,3 +383,63 @@ def test_malformed_region_refuses_to_regenerate(tmp_path):
     )
     with pytest.raises(ValueError, match="malformed generated region"):
         make_report.write_section(doc, "sprint-5", "new table")
+
+
+# --- reaping stranded "running" manifests (ADR-006 addendum) ---------------
+
+
+def test_manifest_records_pid_and_host(tmp_path):
+    """The reaper needs a PID to ask about, written before epoch 0."""
+    import os
+    import platform
+
+    cfg = cfg_for(tmp_path)
+    run = Run(cfg)
+    run.write_manifest()
+    manifest = json.loads((run.dir / "run_manifest.json").read_text())
+    assert manifest["process"] == {"pid": os.getpid(), "host": platform.node()}
+
+
+def test_running_run_with_dead_pid_reaps_to_killed():
+    """A console teardown runs no `finally`, so the writer cannot fix this."""
+    import platform
+
+    # PID 0x7FFFFFFF is not allocatable on Windows or Linux, so it is reliably
+    # dead without having to kill a real process from a test.
+    manifest = {"status": "running", "process": {"pid": 0x7FFFFFFF, "host": platform.node()}}
+    assert make_report.reaped_status(manifest) == "killed"
+
+
+def test_running_run_with_live_pid_stays_running():
+    import os
+    import platform
+
+    manifest = {"status": "running", "process": {"pid": os.getpid(), "host": platform.node()}}
+    assert make_report.reaped_status(manifest) == "running"
+
+
+def test_reaper_leaves_other_hosts_and_old_manifests_alone():
+    """Conservative by design: calling a live run dead is the worse error."""
+    assert make_report.reaped_status({"status": "running"}) == "running"
+    assert (
+        make_report.reaped_status(
+            {"status": "running", "process": {"pid": 0x7FFFFFFF, "host": "some-other-box"}}
+        )
+        == "running"
+    )
+
+
+def test_reaper_does_not_touch_finished_statuses():
+    for status in ("completed", "failed", "interrupted"):
+        assert make_report.reaped_status({"status": status}) == status
+
+
+def test_killed_run_renders_as_killed_in_the_table(tmp_path):
+    import platform
+
+    d = _fake_run(tmp_path, "stranded")
+    manifest = json.loads((d / "run_manifest.json").read_text())
+    manifest["status"] = "running"
+    manifest["process"] = {"pid": 0x7FFFFFFF, "host": platform.node()}
+    (d / "run_manifest.json").write_text(json.dumps(manifest))
+    assert "killed" in make_report.build_table([make_report.load_run(d)])
