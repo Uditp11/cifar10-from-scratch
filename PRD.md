@@ -53,18 +53,31 @@ Explicitly out of scope for v1. Listing these prevents scope creep mid-sprint.
 - **Hardware:** RTX 4060 Laptop GPU (8 GB) + i7-14700HX. All budgets assume batch size 128 with AMP enabled. VRAM is not a constraint here — ResNet-18 on 32×32 inputs at batch 128 uses under 2 GB — but laptop thermals are, so expect ~10–15% throughput decay on runs over an hour.
 - **Python** 3.10+, **PyTorch** 2.x, CUDA available but code must degrade gracefully to CPU (slow) for tests.
 - **Dependencies:** `torch`, `torchvision` (for the *dataset download only*, plus `ToTensor`), `numpy`, `pyyaml`, `tensorboard`, `matplotlib`, `rich`. Anything else needs a note in the ADR log.
-- **Epoch budget reference — MEASURED in Sprint 3** (batch 128, AMP on, `channels_last` **off** per ADR-007, RTX 4060 Laptop, plugged in, Best-performance profile):
+- **Two kinds of timing number appear in this repo. Never compare one to the other.**
 
-  | Model | s/epoch (steady) | First epoch | 30 ep | 120 ep | 200 ep | 300 ep |
-  |---|---|---|---|---|---|---|
-  | SimpleCNN | **4.4** | 66 s | 3.3 min | 10 min | 16 min | 23 min |
-  | ResNet-18-CIFAR | **13.6** | 80 s | 8 min | **28 min** | 46 min | 69 min |
+  | Kind | Where it lives | What it measures |
+  |---|---|---|
+  | **Run-level** | this table, `EXPERIMENTS.md` § Measured epoch times, `run_manifest.json` → `runtime.seconds_per_epoch` | Wall-clock seconds per epoch of a real training run — validation, checkpoint write and logging included. **This is the only kind that predicts wall clock.** |
+  | **Per-step** | ADR-007's table | Milliseconds per optimizer step from a timing loop, with no validation, checkpointing or logging. Isolates a kernel-level effect; systematically lower. |
 
-  The first epoch costs an extra ~60–75 s on Windows: eight dataloader workers spawn and each unpickles its own copy of the CIFAR-10 split. It is a fixed cost per run, so it is 20% of a 30-epoch run and under 2% of a 300-epoch one. Every figure above includes it.
+  Every number in this section is run-level. Each table in this repo now says which kind it is.
 
-  ResNet-18 at 120 epochs is **28 min**, inside the M3 45-minute budget with room to spare. Total GPU time across Sprints 5–7 ≈ 15 h, or ~17 h allowing for the 10–15% thermal decay on runs over an hour.
+- **Epoch budget reference — MEASURED, run-level** (batch 128, AMP on, `channels_last` **off** per ADR-007, RTX 4060 Laptop, plugged in, Best-performance profile):
 
-  These replace the pre-sprint estimates (SimpleCNN 5–6 s, ResNet-18 14–18 s), which were close but assumed `channels_last` was a win — it is a 3× loss at this resolution (ADR-007).
+  | Model | s/epoch (steady) | Across sessions | First epoch | 30 ep | 120 ep | 200 ep | 300 ep |
+  |---|---|---|---|---|---|---|---|
+  | SimpleCNN | **4.4–6.4** | ±20%, not reproducible | 62–73 s | 3.3–4.3 min | 10–14 min | 16–22 min | 23–33 min |
+  | ResNet-18-CIFAR | **13.8** | ±4% (13.2–14.2) | 80–86 s | 8 min | **29 min** | 47 min | 70 min |
+
+  ResNet-18 at 120 epochs is **29 min**, inside the M3 45-minute budget with room to spare — re-measured run-level in Sprint 4 across three sessions and unchanged from the Sprint 3 figure of 13.6. Total GPU time across Sprints 5–7 ≈ 15 h, or ~17 h allowing for the 10–15% thermal decay on runs over an hour. Sprint 5's nine-run sweep is ~4.4 h.
+
+  Three things distort a naive reading of these numbers, all measured in Sprint 4:
+
+  1. **The first epoch costs an extra ~60–75 s on Windows.** Eight dataloader workers spawn and each unpickles its own copy of the CIFAR-10 split. Fixed per run, so it is 20% of a 30-epoch run and under 2% of a 300-epoch one. The multi-epoch totals above include it; the s/epoch column does not.
+  2. **Epoch times ramp for several epochs, not one.** ResNet-18 settles by epoch 3; SimpleCNN takes until roughly epoch 7 (8.4, 7.0, 5.2, 4.7, 4.3, then flat). **A run shorter than ~10 epochs cannot measure a steady state** and will report a ramp-inflated number — `runtime.seconds_per_epoch` takes the median of the run's back half, which converges correctly for long runs but cannot rescue a short one. Read it against `summary.epochs_completed`.
+  3. **SimpleCNN's steady state is not reproducible across sessions**, measuring 4.4 s/epoch in one and 6.4 in the next on identical config and commit. ResNet-18 varies only ±4%. The likely mechanism is GPU boost state: ResNet-18 saturates the card and always clocks up, while SimpleCNN never draws enough to leave a lower power state, so its epoch time depends on what ran before it. **SimpleCNN is therefore unusable as an instrument for timing comparisons** — run performance A/Bs on ResNet-18.
+
+  These replace the pre-sprint estimates (SimpleCNN 5–6 s, ResNet-18 14–18 s), which were close but assumed `channels_last` was a win — it is a ~3× loss at this resolution (ADR-007).
 
 ## 6. Architecture
 

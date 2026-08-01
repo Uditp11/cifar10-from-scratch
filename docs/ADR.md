@@ -110,7 +110,9 @@ The GPU itself is healthy — an fp16 4096³ matmul sustains 28.9 TFLOPS at 2580
 
 **Consequences.** Every epoch budget in `PRD.md` §5 and `EXPERIMENTS.md` is measured with NHWC off. Anyone porting this to a desktop GPU or a larger input size should re-measure before assuming the default still holds — the field stayed configurable precisely so that costs one line.
 
-**Sprint 4 addendum.** The table above is a `ms/step` micro-benchmark. Re-measured as two full runs (`runs/cl_off` vs `runs/cl_on`, SimpleCNN, 6 epochs) the penalty is 2.2×, not 2.9×: an epoch also contains validation, checkpointing and logging, all format-independent, which dilutes the ratio. The decision is unchanged; when reading against a wall-clock budget, use the run-level number.
+**Sprint 4 addendum.** The table above is **per-step** — milliseconds per optimizer step, no validation, checkpointing or logging. It must not be compared against the run-level tables in `PRD.md` §5 and `EXPERIMENTS.md`; both now say which kind they are.
+
+An earlier version of this addendum claimed the run-level penalty was 2.2× rather than 2.9%, and attributed the gap to format-independent per-epoch work diluting the ratio. **That was wrong and is withdrawn.** It rested on a 6-epoch SimpleCNN A/B in which the `channels_last: false` arm never left its startup ramp, so the denominator was inflated. SimpleCNN was also the wrong model to measure on: its epoch time is not reproducible across sessions (see `EXPERIMENTS.md`). The A/B was re-run on ResNet-18, where both arms are GPU-bound — see the run-level confirmation in `EXPERIMENTS.md` § Sprint 4.
 
 ---
 

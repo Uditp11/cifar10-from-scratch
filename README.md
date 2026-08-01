@@ -47,22 +47,29 @@ runs/{run_name}/
 ## Comparing runs
 
 ```bash
-python scripts/make_report.py --runs runs/cl_off runs/cl_on --out docs/
+python scripts/make_report.py --runs runs/r18_runlevel runs/r18_cl_on --out docs/
 ```
 
 The table carries only the hyperparameters that actually *differ* between the compared runs, plus
 the summary columns, and gets appended to `docs/EXPERIMENTS.md` alongside an overlaid val-accuracy
-curve. The first real use of it was re-measuring ADR-007 — SimpleCNN, 6 epochs, identical in every
-setting but one:
+curve. The first real use of it was confirming ADR-007 against full training runs — ResNet-18,
+12 epochs, identical in every setting but one:
 
 | Run | Hash | channels_last | Best val acc | s/epoch | Min |
 |---|---|---|---|---|---|
-| `runs/cl_off` | `e52f6720740b` | False | 86.38 | **6.54** | 1.8 |
-| `runs/cl_on` | `b23f6d51ffa0` | True | 86.92 | **14.36** | 2.5 |
+| `runs/r18_runlevel` | `408a9d82636a` | False | 89.68 | **13.84** | 4.2 |
+| `runs/r18_cl_on` | `d60ad5395da4` | True | 89.34 | **38.78** | 8.8 |
 
-NHWC costs 2.2× the wall clock at 32×32 on this GPU and buys 0.54% of val accuracy that is well
-inside seed noise at 6 epochs. `s/epoch` is the median of the steady-state epochs — the first epoch
-of every Windows run carries a fixed 60–75 s of DataLoader worker spawn and is excluded.
+NHWC costs 2.80× the wall clock at 32×32 on this GPU, against the 2.90× that ADR-007's per-step
+benchmark predicted, and buys no accuracy. Two things make that number readable, both learned the
+hard way in Sprint 4:
+
+- `s/epoch` is the median of the run's **back half**. Epoch times ramp for several epochs — about 3
+  for ResNet-18, 7 for SimpleCNN — on top of the fixed 60–75 s of DataLoader worker spawn that every
+  Windows run pays in epoch 1. **A run under ~10 epochs cannot measure a steady state at all.**
+- The A/B is on ResNet-18, not SimpleCNN, because SimpleCNN's epoch time is not reproducible across
+  sessions (4.4 s vs 6.4 s, same config, same commit) while ResNet-18 holds ±4%. Measure performance
+  on the model that actually loads the hardware — see `PRD.md` §5.
 
 Sweeps run a directory of configs back to back, continuing past a failure:
 

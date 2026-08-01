@@ -23,16 +23,28 @@ Laptop GPU — record whether the machine was plugged in and on the "Best perfor
 
 **Sprint 3 conditions:** plugged in, Best-performance profile. Under sustained load the GPU held 2580 MHz at 65–68 °C with no throttle flags set; an fp16 4096³ matmul benchmarked at 28.9 TFLOPS, so the card is delivering its clocks. No run in this sprint exceeded 4 minutes, so none of these numbers carry thermal decay.
 
-### Measured epoch times
+### Measured epoch times — RUN-LEVEL
 
-Batch 128, AMP on, `channels_last` off (ADR-007). Steady-state excludes the first epoch.
+Batch 128, AMP on, `channels_last` off (ADR-007). **Run-level**: a real training run, validation and
+checkpoint writes and logging included. ADR-007's table is **per-step** and is not comparable with
+this one — see `PRD.md` §5. Steady state is the median of a run's back half, not
+everything-but-the-first-epoch (see "the ramp is not one epoch" below).
 
-| Model | s/epoch | First epoch | Notes |
-|---|---|---|---|
-| SimpleCNN | 4.4 (4.27–4.63 mean) | 65.6 s | 351 steps/epoch |
-| ResNet-18-CIFAR | 13.6 (13.5–13.7) | 79.9 s | measured over 5 epochs |
+| Model | s/epoch (steady) | Across sessions | First epoch | Measured over |
+|---|---|---|---|---|
+| SimpleCNN | 4.4 / 6.4 | ±20%, **not reproducible** | 62–73 s | 30 ep (sprint 3), 14 ep ×2 (sprint 4) |
+| ResNet-18-CIFAR | **13.8** | ±4% (13.2–14.2) | 80–86 s | 5 ep (sprint 3), 10 + 12 ep (sprint 4) |
 
 The first epoch costs an extra 60–75 s on Windows: `num_workers=4` on both the train and val loaders means eight worker processes spawn and each unpickles its own copy of the CIFAR-10 split. Fixed per run, so it matters at 30 epochs and disappears at 300.
+
+**The ramp is not one epoch.** ResNet-18 settles by epoch 3; SimpleCNN takes until roughly epoch 7 —
+the sprint-3 gate run went 65.6, 8.4, 7.0, 5.2, 4.7, 4.3, then flat at 4.3–4.4 for the remaining 24.
+Any run shorter than ~10 epochs reports a ramp-inflated number no matter how the median is taken.
+
+**SimpleCNN cannot be used as a timing instrument.** Identical config and commit measured 4.4 s/epoch
+in one session and 6.4 in the next. ResNet-18 varied ±4% over the same period. Likely GPU boost
+state — ResNet-18 saturates the card, SimpleCNN never draws enough to leave a lower power state, so
+its epoch time depends on what ran before it. Run performance A/Bs on ResNet-18.
 
 ---
 
@@ -87,8 +99,8 @@ The first epoch costs an extra 60–75 s on Windows: `num_workers=4` on both the
 
 - `random_crop_padding` uses `padding_mode="reflect"` (`build_train_transform`, sprint 1). Zero padding is the
   classic recipe and is worth testing in Sprint 5.
-- `channels_last` is off by default (ADR-007) because it measured 3× slower here. Re-measure on any other GPU
-  before assuming that still holds — it is one config flag.
+- `channels_last` is off by default (ADR-007) because it measured 2.8× slower here run-level on ResNet-18.
+  Re-measure on any other GPU before assuming that still holds — it is one config flag.
 - The val loader runs `num_workers=4` to serve ten batches of 512. Four worker spawns almost certainly cost more
   than they save, and they are half of the 60–75 s first-epoch penalty. Worth measuring against `num_workers=0`
   on the eval loaders.
@@ -99,7 +111,11 @@ The first epoch costs an extra 60–75 s on Windows: `num_workers=4` on both the
 
 **Sprint 3 — NHWC is not free.** See ADR-007. The reflex to enable `channels_last` alongside AMP is ImageNet advice; at 32×32 with CIFAR channel counts it cost 3× the wall clock on this GPU. It is worth a single measured run before adopting any "standard" performance recipe at an unusual input size.
 
-**Sprint 4 — ADR-007 re-measured end to end, and the penalty is 2.2×, not 3×.** The channels_last A/B below is the first comparison produced by `make_report.py` rather than by a hand-run benchmark, and it disagrees slightly with ADR-007's table: 14.36 vs 6.54 s/epoch, a 2.2× penalty where the sprint-3 micro-benchmark said 2.9×. The difference is what a full epoch contains that a `ms/step` loop does not — validation over 5,000 images, checkpoint writes, logging — all of which are format-independent and dilute the ratio. Both numbers are correct about their own question; the run-level one is the one that predicts wall clock, so it is the one the epoch budgets should be read against. The direction is unchanged and ADR-007 stands. Val accuracy differed by 0.54% in NHWC's favour, which at 6 epochs is well inside seed noise and is not evidence of anything.
+**Sprint 4 — a six-epoch run cannot measure seconds per epoch, and this document briefly claimed otherwise.** An earlier version of this section reported that ADR-007's 2.9× `channels_last` penalty was really 2.2× run-level, and explained the gap as validation and checkpointing diluting the ratio. Both halves were wrong, and both are withdrawn. The measurement was a 6-epoch SimpleCNN A/B whose `channels_last: false` arm was still ramping — sprint 3's 30-epoch run shows SimpleCNN going 8.4, 7.0, 5.2, 4.7, 4.3 before settling at 4.4, so *every* sample in a 6-epoch run is startup transient. The explanation was wrong too: sprint 3's numbers were already run-level, from full training runs with `eval_every: 1` and `save_every: 1`, so there was never a per-step-vs-run-level gap to explain for that model. The tooling repeated the error, because `runtime.seconds_per_epoch` excluded only the first epoch; it now takes the median of the run's back half, which reports 4.4 where the old code reported 6.5.
+
+**Sprint 4 — ADR-007 confirmed run-level, on the right model this time.** ResNet-18, 12 epochs, identical but for the flag: 13.84 s/epoch NHWC-off against 38.78 NHWC-on, a **2.80× penalty** where ADR-007's per-step benchmark predicted 2.90×. For a GPU-bound model the two kinds of number agree to within 4%, which is the useful calibration: per-step numbers are a fine proxy *when the model saturates the card*, and misleading when it does not. Val accuracy came out 0.34% in NHWC-off's favour, which at 12 epochs is noise and is not evidence either way. One incidental observation — the NHWC arm's epoch times drift upward across the run (36.2 → 40.8 s) while the NHWC-off arm stays flat, consistent with the heavier arm being the only one that runs the card hot enough to throttle. Anything measuring a sustained 45-minute recipe should expect that drift; nothing in sprints 3–4 ran long enough to see it before.
+
+**Sprint 4 — ResNet-18's budget is sound, and re-measuring it is what proved the rest wrong.** Re-measured run-level across three sessions (5, 10 and 12 epochs), ResNet-18 holds 13.2–14.2 s/epoch against sprint 3's 13.6. The 120-epoch recipe is ~29 minutes, comfortably inside M3's 45, and the sprint 5 sweep is ~4.4 h. Nothing in the budget moves. The useful discovery was the opposite of the one being looked for: **SimpleCNN's epoch time is not reproducible across sessions** — 4.4 in one, 6.4 in the next, identical config and commit — while ResNet-18 varies ±4% over the same window. The plausible mechanism is GPU boost state, since ResNet-18 saturates the card and SimpleCNN does not draw enough to leave a lower power state. The practical rule is that the cheap model is the untrustworthy instrument: measure performance on the one that loads the hardware.
 
 **Sprint 4 — the gate found a resume bug that no accuracy number would have.** Ctrl-C used to write `last.pth` from a half-finished epoch under that epoch's number, so resuming skipped it and left the LR schedule short of `min_learning_rate` (ADR-009). Nothing in a metrics file looks wrong when this happens — the run reports its full epoch count and a plausible curve. It took an explicit "kill it and resume it" step in the gate to see it, which is an argument for gates that exercise the failure paths rather than only the happy one.
 
@@ -116,11 +132,15 @@ Write these as you go, in prose, one short paragraph each. The table holds the n
 
 *Everything below this line is appended by `scripts/make_report.py`. Don't hand-edit it.*
 
-## Sprint 4 - channels_last A/B (SimpleCNN, 6 epochs)
+*(The first block appended here — a 6-epoch SimpleCNN `channels_last` A/B — was deleted rather than
+kept: both arms were inside their startup ramp and the model is not a reproducible timing
+instrument. It is replaced by the ResNet-18 comparison below. See the sprint 4 findings above.)*
+
+## Sprint 4 - channels_last A/B, run-level (ResNet-18-CIFAR, 12 epochs)
 
 | Run | Hash | channels_last | Best val acc | Best epoch | s/epoch | Min | Status |
 |---|---|---|---|---|---|---|---|
-| `runs/cl_off` | `e52f6720740b` | False | 86.38 | 6 | 6.54 | 1.8 | completed |
-| `runs/cl_on` | `b23f6d51ffa0` | True | 86.92 | 6 | 14.36 | 2.5 | completed |
+| `runs/r18_runlevel` | `408a9d82636a` | False | 89.68 | 11 | 13.84 | 4.2 | completed |
+| `runs/r18_cl_on` | `d60ad5395da4` | True | 89.34 | 12 | 38.78 | 8.8 | completed |
 
 ![val accuracy](figures/comparison.png)
