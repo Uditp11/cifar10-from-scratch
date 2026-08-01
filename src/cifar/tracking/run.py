@@ -57,6 +57,29 @@ def _git_info() -> dict[str, Any]:
         return {"sha": None, "branch": None, "dirty": None}
 
 
+def _gpu_temp_c() -> int | None:
+    """Current GPU temperature in Celsius, or None if it cannot be read.
+
+    Recorded at run start and end because `sweep.py` runs jobs back to back:
+    the ninth run of an ablation starts on a card the first eight have been
+    heating, so run *order* silently confounds every wall-clock number in the
+    sweep. One `nvidia-smi` call per run makes that visible instead of
+    mysterious. Never raises -- no GPU, no driver, or no `nvidia-smi` on PATH
+    are all ordinary, and none of them is a reason to fail a training run.
+    """
+    try:
+        out = subprocess.run(
+            ["nvidia-smi", "--query-gpu=temperature.gpu", "--format=csv,noheader,nounits"],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=10,
+        )
+        return int(out.stdout.strip().splitlines()[0])
+    except (OSError, subprocess.SubprocessError, ValueError, IndexError):
+        return None
+
+
 def _env_info() -> dict[str, Any]:
     """Versions and hardware, so a timing number can be read years later."""
     return {
@@ -82,6 +105,8 @@ class Run:
         self._cfg = cfg
         self._started = time.perf_counter()
         self._started_at = _utc_now()
+        self._gpu_temp_start = _gpu_temp_c()
+        self._gpu_temp_end: int | None = None
         base = cfg.log.run_name or f"{cfg.model.name}_{datetime.now():%Y%m%d_%H%M%S}"
         root = Path(cfg.log.run_root)
 
@@ -159,6 +184,8 @@ class Run:
                 "device": self._cfg.device,
                 "channels_last": self._cfg.train.channels_last,
                 "seconds_per_epoch": self._seconds_per_epoch(),
+                "gpu_temp_start_c": self._gpu_temp_start,
+                "gpu_temp_end_c": self._gpu_temp_end,
             },
             "started_at": self._started_at,
             "status": "running",
@@ -173,6 +200,7 @@ class Run:
             summary: Headline numbers, e.g. best val accuracy and best epoch.
             status: `completed` | `failed` | `interrupted` (ADR-006).
         """
+        self._gpu_temp_end = _gpu_temp_c()
         self.write_manifest(
             {
                 "finished_at": _utc_now(),

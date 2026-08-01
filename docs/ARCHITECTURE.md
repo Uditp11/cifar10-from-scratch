@@ -315,7 +315,8 @@ class Run:
   "git": { "sha": "abc1234", "branch": "main", "dirty": false },
   "env": { "python": "3.11.6", "torch": "2.3.0", "cuda": "12.1",
            "gpu": "NVIDIA GeForce RTX 4070", "platform": "Windows-11" },
-  "runtime": { "device": "cuda", "channels_last": false, "seconds_per_epoch": 11.3 },
+  "runtime": { "device": "cuda", "channels_last": false, "seconds_per_epoch": 11.3,
+               "gpu_temp_start_c": 48, "gpu_temp_end_c": 71 },
   "started_at": "2026-07-31T14:23:00Z",
   "finished_at": "2026-07-31T14:58:12Z",
   "total_seconds": 2112.4,
@@ -331,6 +332,13 @@ detail), and the measured steady-state `seconds_per_epoch` — the median of the
 per-epoch times in `metrics.jsonl`, excluding the first epoch, which on Windows carries
 a fixed 60–75 s of DataLoader worker spawn. It is `null` until at least one epoch has
 been logged.
+
+`gpu_temp_start_c` / `gpu_temp_end_c` come from `nvidia-smi` and are `null` wherever it
+cannot be read. They exist because `sweep.py` runs jobs back to back, which silently
+confounds run *order* with thermal state — see the `Min`-column rule in `EXPERIMENTS.md`.
+
+An optional top-level `"retracted": {"reason": ..., "date": ...}` marks a run as withdrawn.
+`make_report.py` keeps the row and strikes it through rather than dropping it (ADR-010).
 
 ```python
 # src/cifar/tracking/logger.py
