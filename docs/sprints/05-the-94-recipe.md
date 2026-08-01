@@ -103,6 +103,8 @@ def test_cosine_reaches_min_lr_at_final_step():
 
 Work in this order — the causes are ranked by how often they're actually the problem.
 
+> **Ranking corrected 2026-08-01 after E4.** Item 1 sat at #1 on my prior, and local measurement contradicted it: E4 — weight decay applied to BN and bias, the thing ADR-003 forbids — gave the *highest* accuracy of all nine Sprint 5 runs, +0.40 over F. The "worth roughly 0.2–0.4%" claim originally attached to it has no supporting evidence in this repo. Verify the split is happening, but assume nothing about the size or even the sign of its effect until the seed-variance runs resolve it. Items 2 and 3 are the load-bearing ones — they are correctness bugs, not tuning preferences.
+
 1. **Weight decay reaching BN.** Print the two param-group sizes. For ResNet-18-CIFAR the no-decay group holds **41** tensors and the decayed group 21, summing to the model's 62. *(Corrected in sprint 5 from "roughly 100", which is a ResNet-**50** count — 53 BN layers x 2 ≈ 106. ResNet-18-CIFAR has 20 BN layers x (scale + shift) + the classifier bias = 41, with all 20 convs bias-free. Verified against the built model; `Trainer` now logs both sizes at startup, and `test_resnet18_no_decay_group_holds_every_bn_and_bias` pins them. Chasing the old number would have meant "fixing" a split that was already correct.)*
 2. **Scheduler stepping per epoch.** Plot the observed LR from `metrics.jsonl`. If it's a staircase with 120 steps rather than a smooth cosine, this is the bug, and it costs ~1%.
 3. **Normalization stats wrong.** Re-run the Sprint 1 verification.

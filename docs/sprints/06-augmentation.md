@@ -73,20 +73,36 @@ Extend `scripts/inspect_data.py` with panels for each augmentation, including a 
 
 ## Ablations
 
-Each 200 epochs (mixup and cutmix need longer schedules to pay off — at 120 epochs they can look *worse* than baseline, which is the most common reason people wrongly conclude mixup doesn't work). ~40–70 min each.
+**Redesigned 2026-08-01, after Sprint 5.** The original table listed eight single-seed configs expecting +0.3 to +0.6 deltas. Sprint 5 then showed four of its nine runs (E4, E3, F, E2) spanning just 0.48 points — at or below the single-seed noise floor. Eight more single-seed runs would have produced eight numbers that cannot be distinguished from one another: six hours of GPU for an uninterpretable table. Fewer configs, more seeds, same budget.
+
+### Step 0 — measure σ first (~1.5 h)
+
+Before any augmentation run, train the **unchanged Sprint 5 F recipe at seeds 42, 1337, 2024**, 120 epochs each. This is Sprint 7's C7.3 seed-variance work pulled forward, because its output is the instrument every row below depends on.
+
+Report **mean ± std**. Then:
+
+- **σ ≲ 0.10** — Sprint 5's E4/E3/E2 spread was real, and single-seed rows here are interpretable. Note that E4 contradicting ADR-003 then becomes a finding that needs acting on.
+- **σ ≈ 0.20–0.25** — as suspected. Sprint 5's top four were always noise, and nothing below is trustworthy at one seed. Run the table at 2 seeds and report mean ± std.
+- **σ ≳ 0.30** — even 2 seeds won't separate 0.3-point effects. Say so plainly, report the table as indicative only, and let Sprint 7's stacked configuration carry the accuracy claim.
+
+Whatever σ is, it retroactively annotates every Sprint 5 row. That single number is worth more than any ablation in this sprint.
+
+### The table (~6 h at 2 seeds, 200 epochs each)
+
+Four configs, not eight. The dropped rows — mixup alone, cutmix alone, cutout+cutmix, the cutout-length sweep — were all near-duplicates of something retained, and none was separable from its neighbour at the deltas involved.
 
 | ID | Change from Sprint 5 recipe | Expected val acc |
 |---|---|---|
 | E9 | baseline at 200 ep (no new aug) | 95.0–95.4% |
 | E10 | + Cutout(1, 16) | 95.4–95.9% |
-| E11 | + Mixup α=0.2 | 95.3–95.8% |
-| E12 | + CutMix α=1.0 | 95.4–95.9% |
-| E13 | + Cutout + Mixup | 95.5–96.1% |
-| E14 | + Cutout + CutMix | 95.5–96.1% |
+| E13 | + Cutout + Mixup α=0.2 | 95.5–96.1% |
 | E15 | + RandAugment(2, 9) + Cutout | 95.6–96.2% |
-| E16 | Cutout length 8 vs 16 vs 20 | sensitivity check |
 
-Pick the winner as the Sprint 7 starting point. If two are within 0.15% of each other, prefer the simpler one and say so — that's a defensible engineering judgment and worth writing down.
+Mixup and cutmix need the longer schedule to pay off — at 120 epochs they can look *worse* than baseline, which is the most common reason people wrongly conclude mixup doesn't work.
+
+**Calibrate your expectations against E8.** Crop + flip alone bought 5.80 points, while Sprint 5's other seven ablations spanned 2.12 points in total. Everything in this table is a tenths-of-a-point game on top of that. The write-up should say so — "we stacked four more augmentations and gained half a point over the two-line baseline" is a more honest and more interesting result than a table implying each one mattered.
+
+Pick the winner as the Sprint 7 starting point. If two are within one σ of each other, prefer the simpler one and say so explicitly — that's a defensible engineering judgment, and it is worth more than a spurious ranking.
 
 ---
 
@@ -137,7 +153,7 @@ def test_no_augmentation_at_eval_time():
 
 ## Gate
 
-Best configuration reaches **≥ 95.5%** val accuracy (≈95.0% test after the selection-bias allowance), all eight ablation rows are in `EXPERIMENTS.md`, and the visual inspection grid confirms each augmentation looks right.
+Best configuration reaches **≥ 95.5%** val accuracy (≈95.0% test), reported as **mean ± std** across seeds — a bare single-seed number no longer clears this gate. σ from Step 0 is recorded in `EXPERIMENTS.md` and annotates every Sprint 5 row retroactively. The visual inspection grid confirms each augmentation looks right.
 
 ---
 
