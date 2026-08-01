@@ -1,0 +1,7 @@
+# E9 -- the sprint-5 F recipe at 200 epochs, no new augmentation. The reference
+# every other row in this sprint is a delta against: comparing E10-E15 to F's
+# 120-epoch number would confound the augmentation with the longer schedule.
+inherits: ../resnet18.yaml
+
+train:
+  epochs: 200

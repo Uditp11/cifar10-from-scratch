@@ -1,0 +1,15 @@
+# E13 -- E10 + Mixup alpha=0.2.
+#
+# `batch_aug_prob: 1.0` (mix every batch) is the original mixup recipe. The
+# sprint file specifies alpha only; timm's convention of mixing half the batches
+# exists to *switch between* mixup and cutmix, which is not what this row does.
+# Recorded here because it is a free parameter the sprint left open.
+#
+# Beta(0.2, 0.2) is strongly bimodal, so most batches draw lam near 0 or 1 and
+# are close to a plain permutation -- see docs/figures/augmentations.png. That
+# is what mixup at this alpha is, not a bug.
+inherits: e10_cutout.yaml
+
+aug:
+  mixup_alpha: 0.2
+  batch_aug_prob: 1.0

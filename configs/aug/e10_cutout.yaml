@@ -1,0 +1,7 @@
+# E10 -- E9 + Cutout(1, 16). One hole covering a quarter of the image is the
+# standard CIFAR-10 setting and is deliberately aggressive.
+inherits: e09_baseline.yaml
+
+aug:
+  cutout_holes: 1
+  cutout_length: 16

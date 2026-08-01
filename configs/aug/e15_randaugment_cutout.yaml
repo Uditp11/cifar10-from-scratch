@@ -1,0 +1,9 @@
+# E15 -- E10 + RandAugment(2, 9). RandAugment runs on the PIL image before
+# ToTensor; Cutout stays after Normalize. Both are on top of crop+flip, which
+# sprint 5 measured as worth 5.80 points on its own -- everything here is a
+# tenths-of-a-point game against that.
+inherits: e10_cutout.yaml
+
+aug:
+  randaugment_n: 2
+  randaugment_m: 9

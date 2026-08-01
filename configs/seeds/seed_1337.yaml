@@ -1,0 +1,7 @@
+# Sprint 6 step 0 -- seed variance. The sprint-5 F recipe, byte-identical except
+# for the seed, so the spread across these three runs is the noise floor every
+# ablation in this project is read against. 120 epochs, as F was.
+inherits: ../resnet18.yaml
+
+repro:
+  seed: 1337
