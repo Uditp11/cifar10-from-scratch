@@ -46,12 +46,18 @@ Confirm from Sprint 3 and fix if wrong:
 
 ### C5.3 — Recipe configs
 
-- `configs/resnet18.yaml` — the full 94% recipe above.
+- `configs/resnet18.yaml` — the full 94% recipe above. Note that `base.yaml` already carries most of it (SGD 0.1, Nesterov, cosine, 5-epoch warmup, wd 5e-4 with BN/bias excluded, 120 epochs). The only genuine delta is `label_smoothing: 0.1`. Don't restate inherited values — a config that repeats its parent is a config that silently drifts from it.
 - `configs/ablations/` — one file per row of the table below, each inheriting from `resnet18.yaml` and changing exactly one thing.
 
 ### C5.4 — Run the ablation ladder
 
-Each run is 120 epochs unless noted, ~25–40 min on a consumer GPU. Total ~4–6 hours. Launch with `scripts/sweep.py` and step away.
+Each run is 120 epochs unless noted, ~29 min measured. Total ~4.4 hours. Launch with `scripts/sweep.py` and step away.
+
+**Run F first, not last.** F is the gate; the eight ablations are only interesting if the recipe they vary actually works. Finding out at minute 29 that F missed 94.5% costs you half an hour. Finding out at hour four costs you the evening. If F misses, **stop the sweep** and work the debug checklist at the end of this file before spending GPU time on ablations of a broken recipe.
+
+Run `eval.py` on F's best checkpoint the moment it lands, and confirm test ≥ 94.0% (M1). Do not defer that to Sprint 8.
+
+**Unattended-run hygiene**, since this is a laptop and the sweep is 4.4 hours: set the Windows power plan so the machine never sleeps or hibernates on AC — a sleep event mid-sweep kills every remaining run. Plug in, use the "Best performance" profile, and keep the machine on a hard surface. GPU temperature is now recorded per run, so thermal drift will be visible after the fact rather than mysterious.
 
 | ID | Config | Change from full recipe | Expected val acc |
 |---|---|---|---|
