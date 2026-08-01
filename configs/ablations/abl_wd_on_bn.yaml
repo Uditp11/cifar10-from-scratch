@@ -1,0 +1,7 @@
+# E4 -- weight decay applied to BN scales and every bias too, i.e. one param
+# group instead of two. Expected 94.2-94.9%. This is the ablation ADR-003 exists
+# to justify, and the failure mode item 1 of the debug checklist warns about.
+inherits: ../resnet18.yaml
+
+optim:
+  no_wd_on_bn_bias: false

@@ -1,0 +1,5 @@
+# E6 -- weight decay 1e-4 instead of 5e-4. Expected 93.8-94.6%.
+inherits: ../resnet18.yaml
+
+optim:
+  weight_decay: 1.0e-4

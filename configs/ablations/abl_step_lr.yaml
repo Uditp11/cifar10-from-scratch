@@ -1,0 +1,7 @@
+# E2 -- step decay at epochs 60/90 in place of cosine. Expected 94.0-94.7%.
+# Milestones are inherited from base.yaml, which already sets [60, 90]; only the
+# schedule itself changes.
+inherits: ../resnet18.yaml
+
+optim:
+  scheduler: step

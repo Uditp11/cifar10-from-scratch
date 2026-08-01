@@ -1,0 +1,7 @@
+# E7 -- 30 epochs instead of 120. Expected 92.5-93.5%.
+# Cosine rescales to the shorter horizon automatically (it reads
+# cfg.train.epochs), so this measures the budget, not a truncated schedule.
+inherits: ../resnet18.yaml
+
+train:
+  epochs: 30

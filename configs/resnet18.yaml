@@ -1,4 +1,9 @@
+# The 94% recipe (sprint 5). base.yaml already carries all of it -- SGD 0.1 with
+# Nesterov, wd 5e-4 excluded from BN/bias, 5-epoch warmup into cosine, 120
+# epochs at batch 128, AMP on, pad-4 crop + flip -- including `model.name`.
+# Label smoothing is the only genuine delta, so it is the only line here: a
+# config that restates its parent is a config that silently drifts from it.
 inherits: base.yaml
 
-model:
-  name: resnet18_cifar
+optim:
+  label_smoothing: 0.1

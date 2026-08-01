@@ -1,0 +1,5 @@
+# E3 -- straight into cosine at lr 0.1, no warmup. Expected 94.3-95.0%.
+inherits: ../resnet18.yaml
+
+optim:
+  warmup_epochs: 0

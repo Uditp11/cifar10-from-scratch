@@ -78,11 +78,34 @@ class Trainer:
             self.device.type, enabled=cfg.train.amp and self.device.type == "cuda"
         )
 
+        self._log_optimizer()
+
         self.start_epoch = 0
         self.best_val_acc = 0.0
         self.best_epoch = -1
         # Kept so the end-of-run confusion matrix costs no extra forward pass.
         self._last_eval: EvalResult | None = None
+
+    def _log_optimizer(self) -> None:
+        """Record the param-group split and momentum flags before epoch 0.
+
+        Weight decay leaking onto BN and bias is the single most common cause of
+        a CIFAR ResNet stalling ~1% low, and it is invisible in every metric a
+        run produces -- the curves look fine, the number is just worse. The only
+        cheap defence is printing what the optimizer actually got.
+
+        For ResNet-18-CIFAR the no-decay group holds **41** tensors: 20 BN
+        layers x (scale + shift) + the classifier bias, with all 20 convs
+        bias-free. A materially different count means the split is not doing
+        what ADR-003 says it does.
+        """
+        groups = ", ".join(
+            f"{len(g['params'])} tensors @ wd {g['weight_decay']:g}"
+            for g in self.optimizer.param_groups
+        )
+        first = self.optimizer.param_groups[0]
+        flags = "".join(f" {k} {first[k]!r}" for k in ("momentum", "nesterov") if k in first)
+        self.logger.info(f"optimizer {type(self.optimizer).__name__} [{groups}]{flags}")
 
     def train_one_epoch(self, epoch: int) -> dict[str, float]:
         """Run one full pass over the training loader.

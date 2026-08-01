@@ -1,0 +1,7 @@
+# E5 -- plain cross-entropy, undoing this sprint's one config delta.
+# Expected 94.5-95.1%. Calibration, not just accuracy, is the interesting axis
+# here; ECE lands in sprint 7 (E21).
+inherits: ../resnet18.yaml
+
+optim:
+  label_smoothing: 0.0

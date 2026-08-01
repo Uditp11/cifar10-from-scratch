@@ -1,0 +1,8 @@
+# E1 -- AdamW 1e-3 in place of SGD 0.1. Expected 93.0-94.0%.
+# `build_optimizer` passes no weight_decay to AdamW directly; it rides on the
+# param groups exactly as it does for SGD, so this stays a one-thing change.
+inherits: ../resnet18.yaml
+
+optim:
+  optimizer: adamw
+  learning_rate: 1.0e-3

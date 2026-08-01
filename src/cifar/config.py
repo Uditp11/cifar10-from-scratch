@@ -315,20 +315,47 @@ def _validate(cfg: Config) -> None:
         raise ValueError(f"scheduler ({cfg.optim.scheduler!r}) must be one of {_KNOWN_SCHEDULERS}")
 
 
+def _resolve_inherits(path: Path, seen: tuple[Path, ...] = ()) -> dict[str, Any]:
+    """Read a config and every ancestor it inherits from, nearest override winning.
+
+    Chains, not just one hop: sprint 5's ablations inherit `resnet18.yaml`,
+    which inherits `base.yaml`. Resolving a single level leaves the parent's own
+    `inherits:` key in the merged dict, where it surfaces as the thoroughly
+    unhelpful `Unknown config key: inherits`.
+
+    Args:
+        path: Config to read. `inherits` is resolved relative to its directory.
+        seen: Ancestors already visited on this chain, for cycle detection.
+
+    Returns:
+        The merged mapping, before overrides and validation.
+
+    Raises:
+        ValueError: On an inheritance cycle. Left alone this is an infinite
+            recursion, which reports itself as a stack overflow a hundred frames
+            from the config that caused it.
+    """
+    resolved = path.resolve()
+    if resolved in seen:
+        chain = " -> ".join(p.name for p in (*seen, resolved))
+        raise ValueError(f"Config inheritance cycle: {chain}")
+
+    data = _read_yaml(path)
+    inherits = data.pop("inherits", None)
+    if inherits is None:
+        return data
+    parent = _resolve_inherits(path.parent / inherits, (*seen, resolved))
+    return _deep_merge(parent, data)
+
+
 def load_config(path: str | Path, overrides: list[str] | None = None) -> Config:
-    """Load YAML, merge onto base.yaml, apply dotted CLI overrides, validate.
+    """Load YAML, merge onto every config it inherits, apply dotted CLI overrides, validate.
 
     Overrides look like ["optim.learning_rate=0.05", "train.epochs=200"].
     Raises ValueError on unknown keys, type mismatches, or failed invariants.
     """
     path = Path(path)
-    target = _read_yaml(path)
-    inherits = target.pop("inherits", None)
-    if inherits is not None:
-        parent = _read_yaml(path.parent / inherits)
-        merged = _deep_merge(parent, target)
-    else:
-        merged = target
+    merged = _resolve_inherits(path)
 
     for override in overrides or []:
         _apply_override(merged, override)

@@ -97,6 +97,40 @@ def test_single_param_group_when_no_wd_split_disabled():
     assert len(build_optimizer(build_model(cfg), cfg).param_groups) == 1
 
 
+def test_nesterov_reaches_optimizer():
+    """C5.2: `nesterov: true` in the config has to survive into every group.
+
+    It is a keyword that SGD silently accepts and momentum silently ignores, so
+    nothing downstream would ever complain if it were dropped.
+    """
+    cfg = cfg_for(optim__optimizer="sgd", optim__nesterov=True)
+    opt = build_optimizer(build_model(cfg), cfg)
+    assert all(g["nesterov"] for g in opt.param_groups)
+
+
+def test_nesterov_is_dropped_without_momentum():
+    """Torch rejects Nesterov at momentum 0; the config pair must not raise."""
+    cfg = cfg_for(optim__optimizer="sgd", optim__nesterov=True, optim__momentum=0.0)
+    opt = build_optimizer(build_model(cfg), cfg)
+    assert not any(g["nesterov"] for g in opt.param_groups)
+
+
+def test_resnet18_no_decay_group_holds_every_bn_and_bias():
+    """C5.2: pin the no-decay group size for the model the 94% recipe trains.
+
+    41 = 20 BatchNorm layers x (scale, shift) + the classifier bias; all 20
+    convs are bias-free. Weight decay leaking onto those is the top item on
+    sprint 5's debug checklist and costs ~1% with no other symptom, so the
+    count is asserted rather than eyeballed.
+    """
+    cfg = cfg_for(model__name="resnet18_cifar")
+    opt = build_optimizer(build_model(cfg), cfg)
+    nodecay = [g for g in opt.param_groups if g["weight_decay"] == 0][0]
+    decay = [g for g in opt.param_groups if g["weight_decay"] > 0][0]
+    assert len(nodecay["params"]) == 41
+    assert len(decay["params"]) == 21
+
+
 def test_scheduler_steps_per_step_not_per_epoch():
     cfg = cfg_for(train__epochs=10, optim__warmup_epochs=0)
     opt = build_optimizer(build_model(cfg), cfg)

@@ -1,0 +1,9 @@
+# E8 -- no random crop, no horizontal flip. Expected 87-90%.
+# Two fields rather than one, because "augmentation off" is the single thing
+# being ablated and the sprint 1 baseline is exactly this pair. Expected to be
+# the largest delta in the whole document, and the anchor for sprint 6.
+inherits: ../resnet18.yaml
+
+aug:
+  random_crop_padding: 0
+  horizontal_flip_p: 0.0

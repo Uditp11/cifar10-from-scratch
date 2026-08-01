@@ -100,3 +100,40 @@ def test_quoted_yaml_numbers_are_coerced():
     cfg = load_config("configs/base.yaml", ["optim.learning_rate=0.05", "train.epochs=7"])
     assert isinstance(cfg.optim.learning_rate, float) and cfg.optim.learning_rate == 0.05
     assert isinstance(cfg.train.epochs, int) and cfg.train.epochs == 7
+
+
+def test_inherits_resolves_a_chain_not_just_one_hop():
+    """Regression: `ablation -> resnet18 -> base` used to fail.
+
+    Resolving one level left the parent's own `inherits:` key in the merged
+    dict, which surfaced as `Unknown config key: inherits`.
+    """
+    cfg = load_config("configs/ablations/abl_wd_1e4.yaml")
+    assert cfg.optim.weight_decay == pytest.approx(1e-4)  # the ablation's own delta
+    assert cfg.optim.label_smoothing == pytest.approx(0.1)  # from resnet18.yaml
+    assert cfg.train.epochs == 120  # from base.yaml
+
+
+def test_inheritance_cycle_raises(tmp_path):
+    (tmp_path / "a.yaml").write_text("inherits: b.yaml\n")
+    (tmp_path / "b.yaml").write_text("inherits: a.yaml\n")
+    with pytest.raises(ValueError, match="cycle"):
+        load_config(tmp_path / "a.yaml")
+
+
+def test_resnet18_recipe_carries_the_full_94_recipe():
+    """C5.3: the recipe is asserted here, not restated in the YAML.
+
+    resnet18.yaml holds one line (`label_smoothing`); everything else is
+    inherited. That is only safe if something pins what it inherits *to*.
+    """
+    cfg = load_config("configs/resnet18.yaml")
+    assert cfg.model.name == "resnet18_cifar"
+    assert (cfg.optim.optimizer, cfg.optim.nesterov) == ("sgd", True)
+    assert cfg.optim.learning_rate == pytest.approx(0.1)
+    assert cfg.optim.weight_decay == pytest.approx(5e-4)
+    assert cfg.optim.no_wd_on_bn_bias is True
+    assert (cfg.optim.scheduler, cfg.optim.warmup_epochs) == ("cosine", 5)
+    assert cfg.optim.label_smoothing == pytest.approx(0.1)
+    assert (cfg.train.epochs, cfg.data.batch_size, cfg.train.amp) == (120, 128, True)
+    assert (cfg.aug.random_crop_padding, cfg.aug.horizontal_flip_p) == (4, 0.5)
