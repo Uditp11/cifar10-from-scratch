@@ -116,10 +116,20 @@ class Run:
     def _seconds_per_epoch(self) -> float | None:
         """Median steady-state epoch time from `metrics.jsonl`, or None.
 
-        The first epoch is dropped whenever there is more than one: on Windows
-        it carries a fixed 60-75 s of DataLoader worker spawn, which describes
-        the platform rather than the model (EXPERIMENTS.md, sprint 3). Median,
-        not mean, so one thermally-throttled epoch does not move the number.
+        Computed over the **back half** of the run, not over everything-but-the-
+        first-epoch. Epoch 1 is the obvious outlier -- 60-75 s of DataLoader
+        worker spawn on Windows -- but it is not the only one: measured in
+        sprint 4, SimpleCNN takes until roughly epoch 7 to settle (8.4, 7.0,
+        5.2, 4.7, 4.3, ... 4.4) and ResNet-18 until epoch 3. Dropping only the
+        first epoch reported SimpleCNN at 6.5 s/epoch against a true 4.4.
+
+        Median, not mean, so one thermally-throttled epoch does not move it.
+
+        Returns:
+            Seconds per steady-state epoch, or None before any epoch is logged.
+            **A run shorter than ~10 epochs has no steady state to find and the
+            number it reports is ramp-inflated** -- read it against
+            `summary.epochs_completed` before comparing it with anything.
         """
         path = self._dir / "metrics.jsonl"
         if not path.exists():
@@ -128,7 +138,7 @@ class Run:
         times = [row["epoch_seconds"] for row in rows if "epoch_seconds" in row]
         if not times:
             return None
-        return round(statistics.median(times[1:] or times), 2)
+        return round(statistics.median(times[len(times) // 2 :]), 2)
 
     def write_manifest(self, extra: dict | None = None) -> None:
         """Write `run_manifest.json` with `status: "running"`.

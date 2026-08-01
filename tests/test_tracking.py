@@ -69,16 +69,17 @@ def test_manifest_records_resolved_device_and_memory_format(tmp_path):
     assert runtime["seconds_per_epoch"] is None  # nothing measured yet
 
 
-def test_manifest_seconds_per_epoch_excludes_the_first_epoch(tmp_path):
-    """The first epoch carries fixed worker-spawn cost; it describes Windows,
-    not the model."""
+def test_manifest_seconds_per_epoch_measures_the_steady_state(tmp_path):
+    """Regression: excluding only epoch 1 reported SimpleCNN at 6.5 s/epoch
+    against a true 4.4 -- the run ramps for several epochs, not one."""
     run = Run(cfg_for(tmp_path))
-    rows = [{"epoch": i, "epoch_seconds": s} for i, s in enumerate([90.0, 4.0, 4.0, 6.0])]
+    ramp = [90.0, 8.4, 7.0, 5.2, 4.7, 4.3, 4.4, 4.5, 4.4, 4.4, 4.3, 4.4]
+    rows = [{"epoch": i, "epoch_seconds": s} for i, s in enumerate(ramp)]
     (run.dir / "metrics.jsonl").write_text("\n".join(json.dumps(r) for r in rows) + "\n")
 
     run.finalize({"best_val_acc": 1.0})
     m = json.loads((run.dir / "run_manifest.json").read_text())
-    assert m["runtime"]["seconds_per_epoch"] == pytest.approx(4.0)
+    assert m["runtime"]["seconds_per_epoch"] == pytest.approx(4.4)
     assert m["status"] == "completed"
 
 
