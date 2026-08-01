@@ -79,6 +79,35 @@ def test_mixed_criterion_equals_plain_ce_when_unmixed():
     assert mixed_criterion(criterion, logits, batch) == pytest.approx(criterion(logits, y).item())
 
 
+def test_mixed_criterion_interpolates_between_target_sets():
+    """lam weights the two losses; getting this backwards is silent."""
+    from cifar.data.batch_aug import MixedBatch
+
+    criterion = build_criterion(cfg_for())
+    logits = torch.randn(8, NUM_CLASSES)
+    a, b = torch.randint(0, NUM_CLASSES, (8,)), torch.randint(0, NUM_CLASSES, (8,))
+    lam = 0.25
+    expected = lam * criterion(logits, a) + (1 - lam) * criterion(logits, b)
+    got = mixed_criterion(criterion, logits, MixedBatch(logits.new_zeros(8), a, b, lam))
+    assert got.item() == pytest.approx(expected.item())
+
+
+def test_trainer_needs_no_change_for_batch_aug(tmp_path):
+    """The MixedBatch contract: cutout + mixup + cutmix train end to end with
+    the trainer untouched. If this needs a Trainer edit, the contract broke."""
+    cfg = cfg_for(
+        tmp_path,
+        train__epochs=1,
+        optim__warmup_epochs=0,
+        aug__cutout_holes=1,
+        aug__mixup_alpha=0.2,
+        aug__cutmix_alpha=1.0,
+        aug__batch_aug_prob=1.0,
+    )
+    summary = Trainer(build_model(cfg), tiny_loaders(n=32), cfg, Run(cfg)).fit()
+    assert summary["epochs_completed"] == 1
+
+
 # --- optimizer & scheduler ------------------------------------------------
 
 

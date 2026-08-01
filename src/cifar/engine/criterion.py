@@ -26,10 +26,9 @@ def build_criterion(cfg: Config) -> nn.Module:
 def mixed_criterion(criterion: nn.Module, logits: Tensor, batch: MixedBatch) -> Tensor:
     """Interpolate the loss between a mixed batch's two target sets.
 
-    Until sprint 6 fills in mixup/cutmix this is exactly plain cross-entropy:
-    `apply_batch_aug` returns `lam == 1.0` with both target sets identical, so
-    the second term is multiplied by zero. Writing it this way now means the
-    trainer needs no change when mixing turns on.
+    When no batch aug fires, `apply_batch_aug` returns `lam == 1.0` with both
+    target sets identical, so this reduces to exactly plain cross-entropy and
+    the trainer needs no branch either way.
 
     Args:
         criterion: Per-sample-reducing loss, e.g. from `build_criterion`.
