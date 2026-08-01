@@ -67,6 +67,9 @@ def test_manifest_records_resolved_device_and_memory_format(tmp_path):
     assert runtime["device"] == "cpu"  # resolved, never "auto"
     assert runtime["channels_last"] is False
     assert runtime["seconds_per_epoch"] is None  # nothing measured yet
+    # Present whether or not nvidia-smi exists -- None is a valid reading, a
+    # missing key would make "was this run hot?" unanswerable after the fact.
+    assert "gpu_temp_start_c" in runtime and "gpu_temp_end_c" in runtime
 
 
 def test_manifest_seconds_per_epoch_measures_the_steady_state(tmp_path):
@@ -270,6 +273,8 @@ def _fake_run(root: Path, name: str, **params) -> Path:
             "device": "cuda",
             "channels_last": params.get("channels_last", False),
             "seconds_per_epoch": params.get("spe", 4.5),
+            "gpu_temp_start_c": params.get("temps", (None, None))[0],
+            "gpu_temp_end_c": params.get("temps", (None, None))[1],
         },
         "status": "completed",
         "total_seconds": 120.0,
@@ -308,3 +313,73 @@ def test_load_run_refuses_a_directory_without_a_manifest(tmp_path):
     (tmp_path / "empty").mkdir()
     with pytest.raises(FileNotFoundError):
         make_report.load_run(tmp_path / "empty")
+
+
+def test_retracted_run_stays_in_the_table_struck_through_with_its_reason(tmp_path):
+    """A vanished run is worse than a retracted one in a ledger (ADR-010)."""
+    good = make_report.load_run(_fake_run(tmp_path, "good", acc=91.0))
+    bad = _fake_run(tmp_path, "bad", acc=99.9)
+    manifest = json.loads((bad / "run_manifest.json").read_text())
+    manifest["retracted"] = {"reason": "val loader saw train data", "date": "2026-08-01"}
+    (bad / "run_manifest.json").write_text(json.dumps(manifest))
+
+    table = make_report.build_table([good, make_report.load_run(bad)])
+    assert "~~`" in table and "99.90~~" in table
+    assert "val loader saw train data" in table
+    assert "~~91.00~~" not in table  # the un-retracted row is untouched
+
+
+def test_no_retracted_column_when_nothing_is_retracted(tmp_path):
+    runs = [make_report.load_run(_fake_run(tmp_path, n)) for n in ("a", "b")]
+    assert "Retracted" not in make_report.build_table(runs)
+
+
+def test_table_reports_gpu_temperature_at_both_ends(tmp_path):
+    runs = [make_report.load_run(_fake_run(tmp_path, "a", temps=(48, 71)))]
+    assert "48/71" in make_report.build_table(runs)
+
+
+# --- generated regions ----------------------------------------------------
+
+
+def test_regenerating_a_section_leaves_hand_written_prose_untouched(tmp_path):
+    """The whole point of the sentinels (ADR-010)."""
+    doc = tmp_path / "EXPERIMENTS.md"
+    doc.write_text(
+        "# Ledger\n\nHand-written finding worth more than the table.\n", encoding="utf-8"
+    )
+
+    make_report.write_section(doc, "sprint-5", "first table")
+    doc.write_text(
+        doc.read_text(encoding="utf-8") + "\nA finding written after the first report.\n",
+        encoding="utf-8",
+    )
+    make_report.write_section(doc, "sprint-5", "second table")
+
+    text = doc.read_text(encoding="utf-8")
+    assert "Hand-written finding worth more than the table." in text
+    assert "A finding written after the first report." in text
+    assert "second table" in text
+    assert "first table" not in text
+    assert text.count(make_report.begin_marker("sprint-5")) == 1
+
+
+def test_sections_are_independent(tmp_path):
+    doc = tmp_path / "EXPERIMENTS.md"
+    make_report.write_section(doc, "sprint-5", "five")
+    make_report.write_section(doc, "sprint-6", "six")
+    make_report.write_section(doc, "sprint-5", "five again")
+
+    text = doc.read_text(encoding="utf-8")
+    assert "five again" in text and "six" in text and "five\n" not in text
+
+
+def test_malformed_region_refuses_to_regenerate(tmp_path):
+    """An unmatched marker means the generator cannot tell where the region
+    stops, and guessing eats the paragraph underneath it."""
+    doc = tmp_path / "EXPERIMENTS.md"
+    doc.write_text(
+        make_report.begin_marker("sprint-5") + "\ntable\n\nprose someone added\n", encoding="utf-8"
+    )
+    with pytest.raises(ValueError, match="malformed generated region"):
+        make_report.write_section(doc, "sprint-5", "new table")

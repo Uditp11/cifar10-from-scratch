@@ -141,3 +141,21 @@ A checkpoint written mid-epoch is internally inconsistent in a way no epoch numb
 **Alternatives.** Save under `epoch - 1` (rejected: the weights still contain partial epoch-`epoch` progress, so the checkpoint stays inconsistent — it just relabels the inconsistency). Checkpoint mid-epoch with a step offset and resume the loader mid-stream (rejected: needs a resumable sampler and buys nothing that re-running one epoch doesn't).
 
 **Consequences.** Ctrl-C now costs up to `save_every` epochs of work instead of producing a subtly wrong resume — with the default `save_every: 1`, at most the partial epoch that was going to be discarded anyway. A run interrupted inside epoch 0 has no `last.pth` at all, which is correct: nothing completed. `epochs_completed` on an interrupted run is now one lower than sprint 3 would have reported for the same interrupt.
+
+---
+
+## ADR-010 — `EXPERIMENTS.md` is generated between sentinels, and runs are retracted rather than deleted
+**Date:** 2026-08-01 · **Sprint:** 4 · **Status:** accepted
+
+**Context.** `EXPERIMENTS.md` is two documents sharing one file: tables produced from `run_manifest.json`, and hand-written findings, hypotheses and hardware notes that are the more valuable half. Sprint 4 shipped `make_report.py` as append-only, on the theory that appending can never destroy prose. That holds right up until a generated number is *wrong* — and then the only available tool is a text editor. It happened twice in one sprint: a 6-epoch `channels_last` A/B whose control arm never left its startup ramp, and the finding written on top of it. Both had to be hand-deleted from the region the generator owns, which is precisely the coupling append-only was supposed to prevent.
+
+Sprint 8's C8.5 already specifies the right shape — "regenerate the table with `make_report.py --all`" — it was simply implemented as append. With nine ablation runs about to land in Sprint 5, that is nine more append-and-hand-edit cycles.
+
+**Decision.** Two changes.
+
+1. **Sentinels.** Each `--section <id>` owns a region delimited by `<!-- BEGIN GENERATED: id -->` / `<!-- END GENERATED: id -->`. Regeneration replaces the region's contents and preserves every byte outside it; an unknown section is appended as a new region. Sections are independent, and the id is stable and separate from the heading, so rewording a title cannot orphan a region. An unmatched marker raises rather than guessing where the region stops — guessing is how a generator eats the paragraph underneath it.
+2. **Retraction is data, not deletion.** A run is withdrawn by adding `"retracted": {"reason": "...", "date": "..."}` to its `run_manifest.json`. The row stays in the table, struck through, with the reason rendered beside it.
+
+**Alternatives.** Keep tables in a separate generated file and `include` it (rejected: markdown has no include, and splitting the ledger puts the numbers and the reasoning about them in two places — the failure mode this document exists to avoid). Regenerate the whole file from a template (rejected: makes the prose a generator input, so every finding would have to live in a Python string or a sidecar). Delete retracted runs (rejected: a ledger whose job is being checkable cannot have rows disappear; a reader who remembers a number needs to find out what happened to it, not fail to find it).
+
+**Consequences.** Prose in `EXPERIMENTS.md` is safe by construction, so `--all` is now genuinely re-runnable and Sprint 5's sweep can regenerate its section after every job. Each section carries its own figure (`comparison_{section}.png`) so regenerating one cannot overwrite another's. Retracted runs keep their directory and their row forever, which is the point — the two Sprint 4 retractions above are the worked example. The markers are visible in raw markdown and invisible when rendered.
