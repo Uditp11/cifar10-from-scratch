@@ -18,7 +18,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest", "ruff"]
+# ruff is pinned: `ruff format --check` is a CI gate, and formatting output shifts
+# between ruff releases, so an unpinned version turns an unrelated upstream release
+# into a red build on unmodified code.
+dev = ["pytest", "ruff==0.16.1"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

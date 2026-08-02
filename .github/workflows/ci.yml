@@ -49,8 +49,21 @@ jobs:
       - name: Lint
         run: ruff check src/ tests/ scripts/
 
+      # Same three trees as the lint step above. They were src/ and tests/ only,
+      # which let a badly formatted file in scripts/ pass a green build.
       - name: Format check
-        run: ruff format --check src/ tests/
+        run: ruff format --check src/ tests/ scripts/
+
+      # 26 tests call build_datasets, which is download=True — without this every
+      # job re-fetches ~170 MB from toronto.edu, twice per push across the matrix,
+      # and a red badge caused by someone else's flaky host is still a red badge.
+      # The key is fixed: CIFAR-10 is a frozen dataset, so the cache never needs
+      # to be invalidated.
+      - name: Cache CIFAR-10
+        uses: actions/cache@v4
+        with:
+          path: data/
+          key: cifar10-python-v1
 
       - name: Test (CPU only)
         run: pytest -m "not gpu" -q
