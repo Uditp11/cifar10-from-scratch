@@ -155,6 +155,42 @@ def test_no_augmentation_at_eval_time():
 
 Best configuration reaches **≥ 95.5%** val accuracy (≈95.0% test), reported as **mean ± std** across seeds — a bare single-seed number no longer clears this gate. σ from Step 0 is recorded in `EXPERIMENTS.md` and annotates every Sprint 5 row retroactively. The visual inspection grid confirms each augmentation looks right.
 
+**Gate met on val:** E10 96.28 ± 0.06, E13 96.62 ± 0.11, E15 96.65 ± 0.04, against a baseline of
+95.43 ± 0.10. σ recorded and Sprint 5 annotated. Inspection grid checked by eye — see
+`docs/figures/augmentations.png`.
+
+---
+
+## Decision — E15 is the Sprint 7 base
+
+**Pre-declared 2026-08-02, before any test-set evaluation was run.** This is the point of writing it
+here: the choice is made on validation evidence and on engineering judgment, and **it does not change
+on what the test set says.** If test accuracy disappoints, that is a finding to report, not a licence
+to switch to E13. A configuration chosen after seeing its test number is a selection, not a
+measurement, and it would spend the one guarantee this project has been built around.
+
+E13 (96.62 ± 0.11) and E15 (96.65 ± 0.04) are 0.03 apart — indistinguishable under any σ this project
+can defend. The sprint's own rule for that case is to prefer the simpler config and say so. E15 wins
+on two load-bearing arguments and one expectation:
+
+1. **Transform-only.** E15 lives entirely in the transform pipeline. E13 routes through
+   `MixedBatch` and changes the objective, which also makes its reported train accuracy misleading —
+   `accuracy(logits, batch.targets_a)` scores against one of two target sets.
+2. **Composability.** Sprint 7 stacks EMA, TTA and a 300-epoch schedule on this base. Something that
+   does not alter the loss composes more predictably with all three.
+3. **Expectation, not evidence:** stronger augmentation generally gains more as schedules lengthen,
+   so E15's contested +0.37 over E10 should widen at 300 epochs rather than wash out. Sprint 7 is a
+   fair test of that.
+
+An earlier draft of this reasoning claimed E15 "has no unpinned free parameter" where E13 has
+`batch_aug_prob`. **That was wrong.** RandAugment's `N=2` and `M=9` are two untuned hyperparameters,
+and magnitude is a larger lever than mixup's α — E15 is not the config with fewer free knobs, it is
+the config whose knobs stay inside the transform. The argument above does not rest on that claim.
+
+**What is not settled:** whether E15 beats plain Cutout at all. +0.37 is 4.5σ under the table's own
+noise estimate and 1.8σ under Step 0's, and `EXPERIMENTS.md` records why neither is authoritative.
+E10 remains a defensible base for anyone who wants only the gain nothing threatens.
+
 ---
 
 ## Implementation prompt
@@ -167,4 +203,9 @@ Best configuration reaches **≥ 95.5%** val accuracy (≈95.0% test), reported 
 >
 > Time-box RandAugment to one session; if it overruns, fall back to torchvision's and write an ADR entry.
 >
-> Then write the eight ablation configs, run them at 200 epochs, extend `scripts/inspect_data.py` with a visual panel per augmentation, and report which combination wins. Gate is ≥95.0%.
+> Then write the four ablation configs, run them at 200 epochs at the repeat count Step 0's σ implies, extend `scripts/inspect_data.py` with a visual panel per augmentation, and report which combination wins as mean ± std. Gate is ≥95.5% val.
+
+*(The two paragraphs above were updated 2026-08-02 to match the redesigned Ablations section. The
+original said "eight ablation configs" and "Gate is ≥95.0%", both superseded by the 2026-08-01
+redesign — a prompt that contradicts its own sprint file is how eight uninterpretable runs get made
+twice.)*
