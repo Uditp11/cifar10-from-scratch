@@ -30,8 +30,8 @@ pip install -e .
 python scripts/train.py --config configs/aug/e15_randaugment_cutout.yaml
 ```
 
-Four commands including the clone, and the dataset fetches itself on the first run — but budget for
-that fetch. CIFAR-10 comes from `www.cs.toronto.edu`, which served this machine at roughly 100 KB/s,
+Four commands including the clone — five on a GPU, where torch has to be installed from the CUDA
+index first (see below). The dataset fetches itself on the first run, but budget for that fetch. CIFAR-10 comes from `www.cs.toronto.edu`, which served this machine at roughly 100 KB/s,
 so **the 170 MB download can take twenty minutes or more** on a connection where everything else
 takes two. It lands in `data/` and is never fetched again.
 

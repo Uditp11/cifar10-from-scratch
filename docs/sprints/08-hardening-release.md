@@ -46,6 +46,15 @@ python scripts/eval.py --run runs/<latest> --checkpoint best --tta
 
 Three commands, no manual data download, no undocumented step. Fix whatever breaks — a missing `data/` mkdir, a Windows `num_workers` crash without the `__main__` guard, an absent `figures/` directory. Do this on a genuinely clean checkout; a working tree that has accumulated state hides exactly these bugs.
 
+**Run 2026-08-02 on a fresh clone in a fresh venv — passes on substance, misses the count.** Nothing in the repo broke: no manual mkdir, no `__main__` crash, the dataset downloaded itself, and the run directory came out complete with `run_manifest.json`, `config.yaml`, `tb/`, `checkpoints/` and `figures/lr_schedule.png` written before epoch 0.
+
+**But it is four commands, not three** — `git clone`, `cd`, `pip install -e .`, `python scripts/train.py` — and **five on a GPU**. M7's target is recorded as missed rather than met by dropping `cd` from the count. Two findings worth more than the number:
+
+- **`pip install -e .` installs CPU-only torch.** The cold clone recorded `device: cpu`, `gpu: None`, `torch 2.13.0+cpu`. PyPI's default wheel has no CUDA, so a GPU machine trains ~50× slower with nothing obviously wrong — `device: auto` resolving to `cpu` is working exactly as ADR-005 specifies, which is what makes it quiet. The README now leads with the `--index-url .../cu128` install.
+- **The dataset download is the slowest part of a cold start by far**, ~100 KB/s from `www.cs.toronto.edu` here, twenty-plus minutes for 170 MB. Same host that timed out CI's fetch step at 26.4% in five minutes. The README states the real duration.
+
+A third, environmental rather than repo-side: installing torch into a path deeper than ~200 characters fails on Windows with `OSError: [Errno 2]` unless long-path support is enabled.
+
 ### C8.4 — README
 
 The front door. Structure:
@@ -92,7 +101,7 @@ Report top-1, top-5, per-class accuracy, and confusion matrix. This is the numbe
 | M4 | SimpleCNN ≥ 85% | Sprint 3 run, still in `EXPERIMENTS.md` | ☐ |
 | M5 | No magic numbers in `src/` | C8.2 | ☐ |
 | M6 | ≥ 8 ablation rows | `EXPERIMENTS.md` | ☐ |
-| M7 | Clone → train in 3 commands | C8.3 | ☐ |
+| M7 | Clone → train in 3 commands | C8.3 | ⚠ 2026-08-02: **4 commands** (5 on a GPU). Works cold with no undocumented step; the count misses. |
 
 Plus:
 
