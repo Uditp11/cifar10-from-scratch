@@ -33,7 +33,5 @@ Thumbs.db
 # tensorboard stray logs outside runs/
 events.out.tfevents.*
 
-# local planning notes that are not project documentation — the 8a early-release
-# proposal is career strategy and lives in a job-hunt folder, not in this repo's
-# history, which is intended to be public.
+# Local planning notes that are not project documentation.
 docs/sprints/08a-*.md

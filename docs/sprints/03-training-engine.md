@@ -193,7 +193,7 @@ Work down this list; the cause is nearly always in the first four.
 
 ## Implementation prompt
 
-> Read `CLAUDE.md`, `docs/ARCHITECTURE.md` sections 1, 3, 4, 5, and `docs/sprints/03-training-engine.md`.
+> Read `docs/ARCHITECTURE.md` sections 1, 3, 4, 5, and `docs/sprints/03-training-engine.md`.
 >
 > Implement C3.1 through C3.7 in order. Non-obvious requirements, in priority order: the scheduler steps **once per optimizer step**, not per epoch; BN and bias parameters go in a `weight_decay=0` param group; checkpoints include RNG state so resume is faithful; `Trainer.__init__` takes a `(train, val)` 2-tuple and must never be able to reach the test loader.
 >

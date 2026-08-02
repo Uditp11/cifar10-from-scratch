@@ -1,9 +1,9 @@
 name: CI
 
 # Lint and the CPU test suite on every push and PR to main.
-# GPU-marked tests are excluded here by design: CLAUDE.md requires every test in
-# `tests/` to run on CPU in under 5 seconds, and `-m "not gpu"` is the contract
-# that keeps that promise enforceable on a runner with no CUDA device.
+# GPU-marked tests are excluded here by design: every test in `tests/` is written
+# to run on CPU in under 5 seconds, and `-m "not gpu"` is the contract that keeps
+# that promise enforceable on a runner with no CUDA device.
 
 on:
   push:

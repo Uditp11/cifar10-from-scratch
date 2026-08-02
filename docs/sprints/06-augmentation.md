@@ -195,7 +195,7 @@ E10 remains a defensible base for anyone who wants only the gain nothing threate
 
 ## Implementation prompt
 
-> Read `CLAUDE.md`, `docs/ARCHITECTURE.md` section 3, and `docs/sprints/06-augmentation.md`.
+> Read `docs/ARCHITECTURE.md` section 3, and `docs/sprints/06-augmentation.md`.
 >
 > Fill in the Sprint 1 stubs: `Cutout`, `RandAugment`, and the real `apply_batch_aug` with mixup and cutmix. Nothing in `Trainer` should need to change — if you find yourself editing the trainer, the `MixedBatch` contract is being violated.
 >

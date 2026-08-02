@@ -139,7 +139,7 @@ def test_confusion_matrix_rows_sum_to_class_counts():
 
 ## Implementation prompt
 
-> Read `CLAUDE.md`, `docs/ARCHITECTURE.md` section 5, and `docs/sprints/07-squeeze-and-analyze.md`.
+> Read `docs/ARCHITECTURE.md` section 5, and `docs/sprints/07-squeeze-and-analyze.md`.
 >
 > Part A: implement `ModelEMA` (with the `(1+t)/(10+t)` decay ramp, BN buffers copied directly, and full checkpoint support) and TTA in the evaluator (averaging *probabilities*). Wire EMA into `Trainer` so both raw and EMA val accuracy are logged each epoch.
 >

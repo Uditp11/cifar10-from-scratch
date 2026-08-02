@@ -205,10 +205,12 @@ selection and the reduction orders it implies vary between processes. So what st
 **run-to-run variance, not seed-to-seed variance**, and the seed label is close to decorative at this
 precision. Two consequences. First, this lands in the sprint file's middle branch (σ ≈ 0.20–0.25):
 single-seed rows are not interpretable and the ablation table was run at two repeats. Second, and
-awkwardly, **CLAUDE.md's "any run that can't be reproduced within ±0.15% is a bug" is not met in the
-default fast mode** — 0.26 at a fixed seed exceeds it by a factor of 1.7. That is recorded here as a
-known-open gap rather than quietly repaired, because the contract as written is about `repro.seed`
-and the measurement says `repro.seed` is not what is being reproduced. One process note, since this
+awkwardly, **the reproducibility contract this project stated at the time — "any run that can't be
+reproduced within ±0.15% is a bug" — is not met in the default fast mode** — 0.26 at a fixed seed
+exceeds it by a factor of 1.7. The contract as written was about `repro.seed`, and the measurement
+says `repro.seed` is not what is being reproduced. It has since been replaced by one testable claim
+per mode (C8.1, below); the retired wording is quoted here because withdrawing a claim means saying
+what it was, not removing the trace of it. One process note, since this
 document's own rule is that a wrong claim is withdrawn rather than deleted: an intermediate estimate
 during this sprint put σ at 0.06 from the first three runs and concluded E4 was a 4.6σ result that
 had falsified ADR-003. **That was wrong.** One of those three runs was the throttled seed-1337 run,
@@ -341,12 +343,13 @@ remain *permitted*. Two runs, 10 epochs:
 Bit-identical — and note the hash is **the same one the three `deterministic: true` runs produced**.
 So permitting nondeterministic algorithms changed nothing at all for this workload, and disabling
 `cudnn.benchmark` is sufficient on its own to make a run reproduce exactly. **Fast-mode variance is
-attributable to benchmark kernel selection**, which is what `CLAUDE.md`'s second claim now rests on.
+attributable to benchmark kernel selection**, which is what the second half of the README's
+reproducibility statement now rests on.
 Two honest limits: this is one model on one GPU over 10 epochs, so it rules out nondeterministic
 reductions *manifesting here*, not their existing; and it does not measure how large the
 benchmark-driven spread is — that is Step 0's 0.26, measured separately and in fast mode.
 
-**Sprint 6 — a prediction that was wrong, recorded as such.** Going into evaluation, Udit predicted
+**Sprint 6 — a prediction that was wrong, recorded as such.** Going into evaluation, I predicted
 that selecting the best of 200 epochs would *widen* the val/test gap relative to 120 — 67% more
 draws at the same lottery, so more optimism harvested. **It didn't.** The gap went 0.48 → 0.59,
 a difference smaller than the 0.17 spread between E15's own two seeds, and the direct measurement of

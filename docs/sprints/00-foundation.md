@@ -128,7 +128,7 @@ ruff check src/      # clean
 
 ## Implementation prompt
 
-> Read `CLAUDE.md` and `docs/ARCHITECTURE.md` sections 1 and 2, then `docs/sprints/00-foundation.md`.
+> Read `docs/ARCHITECTURE.md` sections 1 and 2, then `docs/sprints/00-foundation.md`.
 >
 > Implement Sprint 0 components C0.1 through C0.7 in that order. After each component, write its tests from the acceptance-criteria section and make them pass before moving on.
 >

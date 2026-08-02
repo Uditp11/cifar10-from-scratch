@@ -1,6 +1,6 @@
 # Sprints
 
-Read `PRD.md` first, then `CLAUDE.md`, then `docs/ARCHITECTURE.md`. Then work these in order.
+Read `PRD.md` first, then `docs/ARCHITECTURE.md`. Then work these in order.
 
 | # | Sprint | Gate | Effort |
 |---|---|---|---|
@@ -18,7 +18,7 @@ Sprints 01 and 02 can run in parallel. Everything from 03 onward is sequential.
 
 ## How to run one
 
-Give the assistant exactly three files — `CLAUDE.md`, `docs/ARCHITECTURE.md`, and the one sprint file — then paste that sprint's implementation prompt from the bottom of its page. More context than that makes the assistant wander.
+Work from `docs/ARCHITECTURE.md` and the one sprint file. The implementation prompt at the bottom of each sprint page restates everything that sprint needs; nothing outside those two documents should be required.
 
 Build components in the listed order, write each component's tests before moving to the next, and don't open the next sprint until the current gate passes. Commit per component as `sprint-N: <component>`.
 

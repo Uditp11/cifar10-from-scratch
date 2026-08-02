@@ -130,7 +130,7 @@ def test_loader_is_reproducible_across_runs():
 
 ## Implementation prompt
 
-> Read `CLAUDE.md`, `docs/ARCHITECTURE.md` sections 1 and 3, and `docs/sprints/01-data.md`.
+> Read `docs/ARCHITECTURE.md` sections 1 and 3, and `docs/sprints/01-data.md`.
 >
 > Implement C1.1 through C1.6. Two things to be careful about: (a) train and val must use *different transforms* despite coming from the same underlying CIFAR-10 train split — construct two dataset instances rather than sharing one; (b) the val split comes from a committed `configs/val_indices.json`, stratified 500-per-class, and must be identical regardless of seed.
 >

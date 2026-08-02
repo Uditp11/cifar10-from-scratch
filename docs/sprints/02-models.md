@@ -131,7 +131,7 @@ def test_model_can_overfit_ten_samples():
 
 ## Implementation prompt
 
-> Read `CLAUDE.md`, `docs/ARCHITECTURE.md` sections 1 and 4, and `docs/sprints/02-models.md`.
+> Read `docs/ARCHITECTURE.md` sections 1 and 4, and `docs/sprints/02-models.md`.
 >
 > Implement C2.1 through C2.5. The critical detail: this is the **CIFAR** ResNet variant — a 3×3 stride-1 stem and **no maxpool**, so the first stage operates at full 32×32 resolution. Do not copy the torchvision ImageNet architecture. Parameter count for ResNet-18-CIFAR must come out to exactly 11,173,962; if yours differs, the architecture is wrong somewhere — find it rather than adjusting the test.
 >

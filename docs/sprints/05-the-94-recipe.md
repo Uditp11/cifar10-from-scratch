@@ -117,7 +117,7 @@ Work in this order — the causes are ranked by how often they're actually the p
 
 ## Implementation prompt
 
-> Read `CLAUDE.md`, `docs/EXPERIMENTS.md`, and `docs/sprints/05-the-94-recipe.md`.
+> Read `docs/EXPERIMENTS.md`, and `docs/sprints/05-the-94-recipe.md`.
 >
 > Implement C5.1 (LR range test script), verify C5.2, and write the configs in C5.3 — `configs/resnet18.yaml` plus one ablation file per row of the C5.4 table, each changing exactly one thing from the full recipe.
 >

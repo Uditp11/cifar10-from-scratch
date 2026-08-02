@@ -11,13 +11,13 @@
 
 Build a research-grade, fully modular CIFAR-10 image classification system in PyTorch — every component written from scratch (no `timm`, no pretrained weights, no Lightning). The system must reach **≥94% test accuracy** on a single consumer GPU in under 45 minutes of training, and it must do so **reproducibly**: same seed, same config, same number, every time.
 
-The project is deliberately structured as a sequence of independently-shippable components so that each one can be handed to an AI coding assistant as a self-contained task with a precise interface contract and machine-checkable acceptance criteria.
+The project is deliberately structured as a sequence of independently-shippable components, so that each one is a self-contained task with a precise interface contract and machine-checkable acceptance criteria.
 
 ## 2. Why this exists
 
 Two goals, in priority order:
 
-1. **Portfolio-grade artifact.** A recruiter or engineer opening this repo should see disciplined ML engineering — config-driven experiments, a run registry, ablation tables that justify every design choice, and results that anyone can reproduce with one command.
+1. **A legible engineering record.** Someone opening this repo should find config-driven experiments, a run registry, ablation tables that justify every design choice, and results that anyone can reproduce with one command.
 2. **Ground-truth understanding.** Every layer, every schedule, every augmentation is implemented or explicitly wired by hand, so the accuracy number is *earned*, not inherited from a library default.
 
 ## 3. Non-goals
@@ -39,7 +39,7 @@ Explicitly out of scope for v1. Listing these prevents scope creep mid-sprint.
 | # | Metric | Target | How it's measured |
 |---|--------|--------|-------------------|
 | M1 | Test accuracy, primary model | ≥ 94.0% (stretch 95.5%) | `eval.py` on the 10,000-image test set, best checkpoint |
-| M2 | Reproducibility | Two runs, same seed+config → top-1 identical to within **±0.15%** | `make repro-check` runs the same config twice, diffs the metrics |
+| M2 | Reproducibility | `deterministic=true`: two runs, same seed+config → **bit-identical** metrics and weights. Default fast mode: run-to-run spread stated and measured, not bounded | `make repro-check` runs the same config twice, diffs the metrics and hashes the weights |
 | M3 | Wall-clock to target | ≤ 45 min for the 94% recipe | `run_manifest.json` records total train seconds |
 | M4 | Baseline sanity | SimpleCNN ≥ 85% in ≤ 30 epochs | Sprint 2 acceptance run |
 | M5 | Config coverage | 0 magic numbers in `src/` | grep audit in Sprint 8; every tunable lives in a config dataclass |
@@ -115,7 +115,6 @@ Explicitly out of scope for v1. Listing these prevents scope creep mid-sprint.
 ```
 CIFAR-10/
 ├── README.md
-├── CLAUDE.md                  # coding standards — read by AI before every task
 ├── PRD.md                     # this file
 ├── Makefile                   # make train / eval / test / repro-check
 ├── pyproject.toml
@@ -243,24 +242,24 @@ Bands are estimates from the literature, not promises. If a stage underperforms 
 | Risk | Impact | Mitigation |
 |---|---|---|
 | Accuracy plateaus below 94% | Primary metric misses | Sprint 5 has a debug checklist: verify normalization stats, LR range test, confirm no val leakage, check wd is not applied to BN/bias |
-| Bit-exact reproducibility unattainable on GPU | M2 misses | M2 is a **±0.15% tolerance**, not bit-exactness. `cudnn.deterministic` mode documented as an opt-in flag with its throughput cost measured |
+| Bit-exact reproducibility unattainable on GPU | M2 misses | Measured in C8.1: `deterministic=true` **is** bit-exact here, including across a power-state change mid-run, at ~25% throughput cost. The default fast mode is not, and M2 states its measured spread instead of bounding it |
 | Test set used for model selection | Inflated, dishonest number | Sprint 1 carves a 5,000-image val split from train. Test set is touched **only** by `eval.py`, only at the end of a stage. Enforced by a test that asserts `Trainer` never receives the test loader |
 | Scope creep into a framework | Never ships | Non-goals in §3 are binding; new ideas go to `docs/BACKLOG.md` |
 | Long runs lost to a crash | Time waste | Checkpoint every epoch with resume from Sprint 3, not later |
-| AI assistant drifts from interfaces | Integration hell | `CLAUDE.md` + frozen signatures in §6.3; every sprint spec restates its contract |
+| Implementation drifts from the frozen interfaces | Integration hell | Frozen signatures in §6.3; every sprint spec restates its contract, and any deviation needs an `ADR.md` entry |
 
-## 10. Working method (building with AI)
+## 10. Working method
 
-The repo is optimized for AI-assisted implementation. The loop for each sprint:
+The loop for each sprint:
 
-1. **Load context.** Point the assistant at `CLAUDE.md`, `docs/ARCHITECTURE.md`, and the one sprint file. Nothing else.
+1. **Load context.** `docs/ARCHITECTURE.md` and the one sprint file. Nothing else.
 2. **Implement one component at a time**, in the order listed in the sprint spec. Each component's spec includes its exact signature and its tests.
 3. **Tests before integration.** The sprint spec's acceptance criteria are written as assertions; they become `tests/` files.
 4. **Run the gate.** Every sprint has a numeric or executable gate. Do not open the next sprint until it passes.
 5. **Log the result.** Append to `EXPERIMENTS.md`; record any interface deviation in `ADR.md`.
 6. **Commit per component**, message format `sprint-N: <component>`.
 
-Each sprint file ends with a **ready-to-paste implementation prompt** containing everything the assistant needs.
+Each sprint file ends with a self-contained **implementation prompt** restating everything that sprint needs.
 
 ## 11. Open questions
 

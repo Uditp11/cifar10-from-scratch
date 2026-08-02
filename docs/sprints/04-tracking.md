@@ -156,7 +156,7 @@ The report must show only the differing hyperparameter, and TensorBoard must sho
 
 ## Implementation prompt
 
-> Read `CLAUDE.md`, `docs/ARCHITECTURE.md` sections 5 and 6, and `docs/sprints/04-tracking.md`.
+> Read `docs/ARCHITECTURE.md` sections 5 and 6, and `docs/sprints/04-tracking.md`.
 >
 > Implement C4.1 through C4.6. The design rule: `log_scalars` is one call that fans out to console, TensorBoard, and `metrics.jsonl` — no code in `src/` writes to just one of them. Manifests must be written at run start with `status: "running"` and finalized in a `finally` block so crashed and interrupted runs are correctly labeled.
 >
