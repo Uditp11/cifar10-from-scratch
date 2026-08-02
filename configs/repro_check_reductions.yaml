@@ -1,0 +1,21 @@
+# C8.1b -- separates the two things `deterministic: true` switches off together.
+#
+# repro_check.yaml sets deterministic=true, which forces BOTH
+# use_deterministic_algorithms(True) (no nondeterministic reductions/atomics) AND
+# cudnn.benchmark=false (no timing-based kernel selection). Three bit-identical
+# runs therefore prove the *pair* is the source of fast-mode variance, not which
+# member of it.
+#
+# This config switches off only benchmark selection and leaves nondeterministic
+# kernels permitted. Two runs:
+#   differ         -> nondeterministic reductions alone are sufficient
+#   bit-identical  -> benchmark selection was the necessary ingredient
+inherits: resnet18.yaml
+
+train:
+  epochs: 10
+
+repro:
+  seed: 42
+  deterministic: false
+  cudnn_benchmark: false
