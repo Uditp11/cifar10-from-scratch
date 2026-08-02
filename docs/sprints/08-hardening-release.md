@@ -41,7 +41,7 @@ Three commands, no manual data download, no undocumented step. Fix whatever brea
 
 The front door. Structure:
 
-1. **One-line description + the headline result badge** — "95.6% test accuracy on CIFAR-10, ResNet-18 from scratch, 38 min on one RTX 4070."
+1. **One-line description + the headline result badge** — e.g. "96.06% test accuracy on CIFAR-10, ResNet-18 from scratch, 43 min on one RTX 4060 Laptop." Numbers and hardware come from a run manifest, never typed from memory: the GPU is `env.gpu` and the wall clock is `total_seconds`. This line previously read "38 min on one RTX 4070", which was neither the project's GPU nor a measured time.
 2. **Results table** — every stage of the accuracy ladder with its config and its delta.
 3. **Training curve + confusion matrix figures** — above the fold. This is what people actually look at.
 4. **Quickstart** — the three commands from C8.3.

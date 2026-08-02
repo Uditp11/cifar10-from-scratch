@@ -314,7 +314,7 @@ class Run:
   "config": { "...full resolved config..." },
   "git": { "sha": "abc1234", "branch": "main", "dirty": false },
   "env": { "python": "3.11.6", "torch": "2.3.0", "cuda": "12.1",
-           "gpu": "NVIDIA GeForce RTX 4070", "platform": "Windows-11" },
+           "gpu": "NVIDIA GeForce RTX 4060 Laptop GPU", "platform": "Windows-10-10.0.26200-SP0" },
   "runtime": { "device": "cuda", "channels_last": false, "seconds_per_epoch": 11.3,
                "gpu_temp_start_c": 48, "gpu_temp_end_c": 71 },
   "started_at": "2026-07-31T14:23:00Z",
