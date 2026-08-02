@@ -7,6 +7,35 @@
 
 ---
 
+> ## ⚠ Part A's target was met before this sprint started — 2026-08-02
+>
+> **PRD M1's stretch target is 95.5% test. Sprint 6's E15 measured 96.06 ± 0.16% test top-1 across
+> two seeds — met, by 0.56, with none of Part A run.** No EMA, no TTA, no 300-epoch schedule: the
+> gain came from Cutout and RandAugment on the unchanged Sprint 5 recipe.
+>
+> **Part A therefore requires an explicit decision, not a default.** Either re-scope it with a stated
+> new target and a stated reason, or don't run it. What must *not* happen is the PRD target quietly
+> moving so the sprint keeps its purpose — "I stopped when I hit the number I pre-registered rather
+> than moving the goalposts" is a stronger thing for this repository to be able to say than 97%
+> would be, and it is the same discipline as the E15 pre-declaration and C8.1's measure-then-word.
+>
+> Points worth weighing whenever that decision is taken:
+>
+> - The honest case *for* continuing is not accuracy. It is that EMA and TTA are each a small, well
+>   understood component this project has config fields for but no implementation of, and that
+>   `ema_decay` / `ema_warmup_epochs` currently sit in `TrainConfig` doing nothing — the exact
+>   failure mode ADR-008 exists to document.
+> - The 300-epoch schedule has **no evidence behind it**. The reading that every Sprint 6 config
+>   "peaked at epoch 188–198 so none had stopped improving" was withdrawn: cosine annealing to
+>   `min_learning_rate` puts best val in the final epochs by construction.
+> - **Part B is untouched by any of this.** Error analysis, calibration and the model card were never
+>   scoped against an accuracy target, and cat/dog remains the dominant error mode (E15: cat 90.0%,
+>   61 cat→dog, 50 dog→cat). Part B is worth doing whatever is decided about Part A.
+> - Sprint 8a's release work comes first regardless. Part A needs GPU wall-clock; release needs
+>   attention. Serialising them spends the scarce resource last.
+
+---
+
 ## Two halves
 
 The first half squeezes the last few tenths. The second half is what separates a training script from a project: knowing *which* images the model gets wrong, and whether its confidence means anything.
