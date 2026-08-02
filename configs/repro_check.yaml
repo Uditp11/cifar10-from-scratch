@@ -1,0 +1,20 @@
+# C8.1 -- reproducibility verification (M2). Two runs of this config must be
+# bit-identical: same metrics.jsonl, same model weights.
+#
+# 10 epochs, not 120: nondeterminism from kernel selection or unseeded shuffling
+# shows up in the first epoch or not at all, and a check nobody will re-run
+# because it costs half an hour is a check that stops being run.
+#
+# deterministic=true forces use_deterministic_algorithms(True), cudnn.deterministic
+# and cudnn.benchmark=false, and sets CUBLAS_WORKSPACE_CONFIG=:4096:8 -- without
+# that env var cuBLAS raises on CUDA >= 10.2 rather than silently going
+# nondeterministic (see seeding.seed_everything).
+inherits: resnet18.yaml
+
+train:
+  epochs: 10
+
+repro:
+  seed: 42
+  deterministic: true
+  cudnn_benchmark: false
