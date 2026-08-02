@@ -19,7 +19,7 @@ concurrency:
 jobs:
   lint-and-test:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 40
 
     strategy:
       fail-fast: false
@@ -73,14 +73,16 @@ jobs:
       # `continue-on-error` lets the suite proceed -- the ten dataset tests then
       # skip visibly via `requires_cifar10` instead of hanging the job.
       #
-      # 20 and not 5: the first attempt used a 5-minute bound and reached 26.4%.
-      # The host is simply slow from cloud runners. This is paid once -- the step
-      # populates the cache above, and later runs restore it in seconds. The
-      # bound stays strictly below the job's 35 so a stalled fetch can never be
-      # what consumes the job.
+      # The bound was raised by measurement, not guesswork: 5 minutes reached
+      # 26.4%, and 20 minutes reached 99.2% before timing out with 0.8% to go.
+      # 25 gives that margin. The host is simply slow from cloud runners, and
+      # this is paid once -- a completed fetch populates the cache above under a
+      # fixed key, and every later run restores it in seconds. The bound stays
+      # strictly below the job's 40 so a stalled fetch can never be what
+      # consumes the job.
       - name: Fetch CIFAR-10
         continue-on-error: true
-        timeout-minutes: 20
+        timeout-minutes: 25
         run: |
           python - <<'PY'
           from torchvision.datasets import CIFAR10
