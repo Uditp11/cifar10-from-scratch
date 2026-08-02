@@ -25,6 +25,13 @@ If the two runs diverge beyond tolerance, work backward: is a `DataLoader` worke
 
 Grep `src/` for numeric literals outside of config defaults, shape constants, and mathematical constants. Every survivor either moves into a config field or earns a comment explaining why it's structural. Write the audit result into `docs/ADR.md`.
 
+**Also in scope: config fields that silently do nothing** — the inverse defect, and the worse one. A magic number is a value with no name; a dead config field is a name with no value, and it actively misleads, because setting it looks like it did something. Two known cases:
+
+- **`train.ema_decay` and `train.ema_warmup_epochs`.** Both are read by nothing. `src/cifar/engine/ema.py` is specified in `ARCHITECTURE.md` §5 but unimplemented, and `Trainer._save` passes `ema=None` with a `# sprint 7` comment. Setting `ema_decay: 0.999` today changes nothing and reports nothing. This was surfaced when Sprint 7's Part A was found to have met its target before starting: the dead field is the real defect that sprint was carrying, it is not an accuracy problem, and it does not need a sprint — roughly an hour, no GPU. Either implement EMA or delete the fields; both are honest, leaving them is not.
+- **`train.keep_last_n_checkpoints`** is already recorded as inert in ADR-008. That entry is the template for how this class of finding gets written up.
+
+The audit should end with a positive statement — every field in `Config` is either read somewhere in `src/`, or has an ADR entry saying why it isn't.
+
 ### C8.3 — Cold-start verification (PRD M7)
 
 On a clean clone in a fresh virtualenv:

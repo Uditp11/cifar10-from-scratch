@@ -320,9 +320,31 @@ mode's 12.6, about 25%, on a model this small.
 The reason this matters beyond ticking off M2: it answers the Step 0 confound directly. Step 0 could
 not separate "the Energy Saver state changed the result" from "runs vary by 0.26 anyway", because
 both arms were fast mode. C8.1 shows that **in deterministic mode a power-state change mid-run moves
-nothing at all**, which localises fast mode's variance where it was suspected — `cudnn.benchmark`
-selecting kernels by wall-clock timing, and the reduction order following the kernel. That is the
-whole basis for the two-claim wording now in `CLAUDE.md`, and the numbers in it come from this run.
+nothing at all.**
+
+**C8.1b — which half of `deterministic: true` was doing the work.** C8.1 alone cannot say. Setting
+`deterministic: true` switches off two things in the same step (`seeding.seed_everything`):
+`use_deterministic_algorithms(True)`, which forbids nondeterministic reductions and atomics, and
+`cudnn.benchmark = False`, which stops kernels being chosen by wall-clock timing. Three bit-identical
+runs establish that **the pair** is the source of fast-mode variance, not which member of it — an
+attribution to `benchmark` specifically was one notch past what that design reaches, and an earlier
+version of this paragraph made it.
+
+`configs/repro_check_reductions.yaml` (hash `c077ada10da3`) separates them: `deterministic: false`
+with `cudnn_benchmark: false`, so timing-based kernel selection is off while nondeterministic kernels
+remain *permitted*. Two runs, 10 epochs:
+
+| | Scalar diffs | `best.pth` weights | Final `train_loss` |
+|---|---|---|---|
+| D vs E | **0** | `866f747125539331` | `0.77964435632412254` |
+
+Bit-identical — and note the hash is **the same one the three `deterministic: true` runs produced**.
+So permitting nondeterministic algorithms changed nothing at all for this workload, and disabling
+`cudnn.benchmark` is sufficient on its own to make a run reproduce exactly. **Fast-mode variance is
+attributable to benchmark kernel selection**, which is what `CLAUDE.md`'s second claim now rests on.
+Two honest limits: this is one model on one GPU over 10 epochs, so it rules out nondeterministic
+reductions *manifesting here*, not their existing; and it does not measure how large the
+benchmark-driven spread is — that is Step 0's 0.26, measured separately and in fast mode.
 
 **Sprint 6 — a prediction that was wrong, recorded as such.** Going into evaluation, Udit predicted
 that selecting the best of 200 epochs would *widen* the val/test gap relative to 120 — 67% more
