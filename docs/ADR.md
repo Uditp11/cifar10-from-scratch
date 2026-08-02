@@ -206,3 +206,61 @@ non-comparable within a sweep either way — `EXPERIMENTS.md` already says so, a
 not fix thermal drift, it only stops that drift from being aliased onto one config. Sprint 6's own
 table keeps the nested ordering it was run with; its σ ambiguity is recorded as open rather than
 retro-fitted.
+
+---
+
+## ADR-012 — Ablation sweeps run with `cudnn_benchmark: false`
+**Date:** 2026-08-03 · **Sprint:** 8 · **Status:** accepted
+
+**Context.** Sprint 6 spent its most valuable measurement on a question it could not close. Step 0
+measured run-to-run spread of **0.21** across clean runs of one recipe, with two runs at an
+*identical seed and config hash* differing by **0.26**. The four-config ablation table then produced
+its own, incompatible estimate of **0.083**, and `EXPERIMENTS.md` records the disagreement as open
+because neither could be trusted: 0.083 came from back-to-back repeats and describes minutes, 0.209
+rests on two degrees of freedom and one high run. The practical cost was concrete — whether Mixup or
+RandAugment beats plain Cutout is 4.5σ under one estimate and 1.8σ under the other, and the sprint
+could not say which.
+
+C8.1b then localised the cause. `deterministic: true` switches off two things at once, and separating
+them showed that **`cudnn.benchmark = False` alone is sufficient for bit-identical runs** —
+permitting nondeterministic algorithms changed nothing for this workload. The variance was never
+inherent to GPU training here; it was kernel selection by wall-clock timing, and the reduction order
+that follows the kernel.
+
+If the noise can be removed, there is no reason to keep estimating it.
+
+**Decision.** Ablation sweeps set `repro.cudnn_benchmark: false`. Two runs of the same config at the
+same seed are then bit-identical, so run-to-run noise at fixed seed is **zero** and any difference
+between two configs is the effect plus *seed* variance only — cleanly separated, and seed variance is
+the quantity that was actually of interest.
+
+**Cost — measured, not assumed.** Three modes, 10 epochs each, run in two interleaved blocks per
+ADR-011, medians over epochs 4–10:
+
+| Mode | Mean median s/epoch | vs default |
+|---|---|---|
+| `cudnn_benchmark: true` (default) | 13.99 | — |
+| **`cudnn_benchmark: false`** | **14.07** | **+0.6%** |
+| `deterministic: true` | 15.93 | +13.8% |
+
+**+0.6% is indistinguishable from free** and should be read that way rather than as a precise figure:
+the block-to-block spread *within* the default mode was 13.01 to 14.98, wider than the gap being
+measured. The honest claim is that turning benchmark off costs nothing detectable, while full
+determinism costs about 14%. An earlier estimate of ~25% for determinism is superseded — it compared
+runs from different sessions on a drifting thermal state, which is the confound this measurement was
+built to avoid.
+
+**Alternatives.** `deterministic: true` for sweeps (rejected: ~14% for no further benefit, since
+benchmark alone already gives bit-identical runs on this workload — and `use_deterministic_algorithms`
+raises on ops with no deterministic kernel, which is a portability tax for nothing). Keep the default
+and average over more seeds (rejected: spends GPU hours estimating noise that can simply be removed;
+Sprint 6's σ work cost about 2.5 h and still did not settle the question). Hold machine state constant
+across a sweep (rejected: unachievable on a laptop over seven hours, and unnecessary — state cannot
+reach the result once kernel selection is fixed).
+
+**Consequences.** Repeats within a sweep must now **vary the seed** to measure anything; two runs of
+one config at one seed are the same run and tell you nothing. ADR-011's interleaved blocks are
+retained but their motivation narrows: they no longer rescue an accuracy comparison, they keep the
+timing columns and thermal exposure fair. Sprint 6's σ ambiguity stands as recorded — it is history,
+and this entry does not retro-fit it. Configs that need the default's throughput can keep it; the
+recommendation binds sweeps, where comparability is the point, not one-off training runs.

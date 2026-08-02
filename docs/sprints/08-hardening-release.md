@@ -19,7 +19,7 @@
 
 Also measure and document the throughput cost of `deterministic=true`. Put the number in the README so the tradeoff is explicit rather than folklore.
 
-**Run 2026-08-02 — passed.** Three 10-epoch runs of `configs/repro_check.yaml` were bit-identical, weights hashing to `866f747125539331`, one of them on battery under CPU contention and straddling a replug mid-run at 2.1× the wall clock. Cost of determinism: ~25% (15.1–16.7 s/epoch against fast mode's 12.6). C8.1b then separated the two things `deterministic=true` switches off, and found disabling `cudnn.benchmark` alone sufficient. See `EXPERIMENTS.md`.
+**Run 2026-08-02 — passed.** Three 10-epoch runs of `configs/repro_check.yaml` were bit-identical, weights hashing to `866f747125539331`, one of them on battery under CPU contention and straddling a replug mid-run at 2.1× the wall clock. Cost of determinism: **13.8%**, re-measured in interleaved blocks (ADR-012); an initial ~25% from cross-session runs is withdrawn. Turning off `cudnn.benchmark` alone costs **0.6%**, which is why ADR-012 makes it the sweep default. C8.1b then separated the two things `deterministic=true` switches off, and found disabling `cudnn.benchmark` alone sufficient. See `EXPERIMENTS.md`.
 
 If the two runs diverge beyond tolerance, work backward: is a `DataLoader` worker unseeded? Is an augmentation using a global RNG instead of the seeded generator? Is a non-deterministic CUDA kernel in play that `use_deterministic_algorithms` didn't catch?
 

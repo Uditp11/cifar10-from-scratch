@@ -316,8 +316,11 @@ Two configuration findings worth recording rather than discovering later. First,
 AMP path has a deterministic kernel available, so no `warn_only` escape hatch is needed and none was
 used. Second, `CUBLAS_WORKSPACE_CONFIG=:4096:8` is set inside `seeding.seed_everything` *before* any
 CUDA work, which is what keeps cuBLAS from raising on CUDA ≥ 10.2; setting it later, or from a
-shell, would be fragile. Determinism also cost almost nothing here — 15.1–16.7 s/epoch against fast
-mode's 12.6, about 25%, on a model this small.
+shell, would be fragile. Determinism's throughput cost was first put at ~25% here, from 15.1–16.7 s/epoch against fast
+mode's 12.6. **That figure is superseded and withdrawn:** it compared runs from different sessions on
+a drifting thermal state, which is the confound ADR-011 exists to name. Re-measured in two
+interleaved blocks (ADR-012), `deterministic: true` costs **13.8%**, and turning off
+`cudnn.benchmark` alone costs **0.6% — nothing detectable**.
 
 The reason this matters beyond ticking off M2: it answers the Step 0 confound directly. Step 0 could
 not separate "the Energy Saver state changed the result" from "runs vary by 0.26 anyway", because

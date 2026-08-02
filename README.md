@@ -81,7 +81,7 @@ One testable claim per mode, both measured:
   identical `metrics.jsonl` scalars and identical weights. Three 10-epoch runs of
   `configs/repro_check.yaml` hashed to `866f747125539331`, one of them on battery under CPU
   contention, straddling a power-source change mid-run at 2.1× the wall clock. Machine state does
-  not move the number in this mode. Costs about 25% throughput.
+  not move the number in this mode. Costs about 14% throughput (ADR-012).
 - **Default fast mode — expect ~0.1–0.2 run-to-run at a fixed seed; 0.26 observed.**
   `cudnn.benchmark` selects kernels by timing them, so the reduction order depends on machine state
   that no seed controls. `repro.seed` does not make a fast-mode run reproduce. That is the noise
