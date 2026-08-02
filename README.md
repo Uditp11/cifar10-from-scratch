@@ -1,41 +1,110 @@
-# CIFAR-10
+# CIFAR-10 from scratch
 
-See `PRD.md` for the project brief and `docs/ARCHITECTURE.md` for the frozen interfaces.
+A CIFAR-10 classifier in PyTorch where the ResNet, the LR schedule, the augmentations and the
+training loop are all written in this repository, and every recipe decision is backed by a logged
+ablation you can re-run.
 
-## Setup
+**96.06 ± 0.16% test top-1**, mean ± std over two seeds. ResNet-18 (11,173,962 parameters), 200
+epochs, one laptop GPU. No pretrained weights, no `timm`, no `torchvision.models`, no Lightning —
+`torchvision` supplies the CIFAR-10 download and `ToTensor`, nothing else.
+
+| | |
+|---|---|
+| Test top-1 | **96.06 ± 0.16%** (95.94, 96.17) |
+| Test top-5 | 99.73 / 99.75% |
+| Validation top-1 | 96.65 ± 0.04% |
+| val − test gap | 0.59 |
+| Training time | 43–49 min per run |
+| Hardware | RTX 4060 Laptop GPU, torch 2.11.0+cu128 |
+
+Test accuracy was measured once, after the configuration was chosen and
+[written down first](docs/sprints/06-augmentation.md). `Trainer` takes a `(train, val)` 2-tuple, so
+it is structurally incapable of seeing the test set; only `scripts/eval.py` ever loads it.
+
+## Quickstart
 
 ```bash
-pip install -e ".[dev]"
+git clone https://github.com/Uditp11/cifar10-from-scratch.git
+cd cifar10-from-scratch
+pip install -e .
+python scripts/train.py --config configs/aug/e15_randaugment_cutout.yaml
 ```
 
-## Makefile targets
+Four commands including the clone, and the dataset fetches itself on the first run — but budget for
+that fetch. CIFAR-10 comes from `www.cs.toronto.edu`, which served this machine at roughly 100 KB/s,
+so **the 170 MB download can take twenty minutes or more** on a connection where everything else
+takes two. It lands in `data/` and is never fetched again.
 
-`make` may not be available on Windows; the raw commands are listed alongside each target.
+Two things that bite on Windows in particular:
 
-| Target | Command |
-|---|---|
-| `install` | `pip install -e ".[dev]"` |
-| `test` | `pytest -q` |
-| `lint` | `ruff check src/` |
-| `format` | `ruff format src/ tests/` |
-| `train` | `python scripts/train.py` |
-| `eval` | `python scripts/eval.py` |
-| `clean` | remove `runs/`, `.pytest_cache/`, `.ruff_cache/`, `__pycache__` dirs |
-| `repro-check` | `python scripts/train.py repro.deterministic=true` |
+- **`pip install -e .` gets you CPU-only PyTorch.** PyPI's default `torch` wheel has no CUDA support,
+  so a machine with a GPU trains on the CPU instead — `device: auto` resolves to `cpu`, everything
+  still runs, roughly fifty times slower. For a GPU, install torch first:
+  `pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128`.
+- **Clone somewhere short.** Installing torch under a path deeper than about 200 characters fails
+  with `OSError: [Errno 2]` unless Windows long-path support is on. `C:\projects\` is fine; a nested
+  temp directory is not.
 
-## What a run leaves behind
+Evaluate a finished run:
+
+```bash
+python scripts/eval.py --run runs/<run-dir> --checkpoint best
+```
+
+## Where the accuracy actually came from
+
+The most interesting result here is how lopsided the contributions are. Two lines of transform
+config — pad-4 random crop and a horizontal flip — outweigh everything else by about four to one:
+
+| Ingredient | Δ val accuracy | Status |
+|---|---|---|
+| Random crop + horizontal flip | **+5.80** | Established |
+| Cutout(1, 16) | **+0.85** | Established, 4σ |
+| 120 → 200 epochs | +0.29 | Weak, 1.4σ |
+| Mixup *or* RandAugment on top of Cutout | +0.35 | Probably real, **not established** |
+
+That last row is deliberately not rounded up. Two configurations reached it independently and in the
+same direction, but it is 4.5σ under one noise estimate and 1.8σ under another, and the disagreement
+between those estimates is [recorded as open](docs/EXPERIMENTS.md) rather than resolved in favour of
+the convenient one. Mixup and RandAugment finished 0.03 apart — indistinguishable — so the one that
+composes more simply was chosen and the reasoning written down.
+
+Nine further ablations covering optimizer, schedule, warmup, weight decay, label smoothing and epoch
+budget are in [`docs/EXPERIMENTS.md`](docs/EXPERIMENTS.md), along with the results that came out
+against expectation and the claims this project has had to withdraw.
+
+## Reproducibility
+
+One testable claim per mode, both measured:
+
+- **`repro.deterministic: true` — runs reproduce bit-identically.** Not within a tolerance:
+  identical `metrics.jsonl` scalars and identical weights. Three 10-epoch runs of
+  `configs/repro_check.yaml` hashed to `866f747125539331`, one of them on battery under CPU
+  contention, straddling a power-source change mid-run at 2.1× the wall clock. Machine state does
+  not move the number in this mode. Costs about 25% throughput.
+- **Default fast mode — expect ~0.1–0.2 run-to-run at a fixed seed; 0.26 observed.**
+  `cudnn.benchmark` selects kernels by timing them, so the reduction order depends on machine state
+  that no seed controls. `repro.seed` does not make a fast-mode run reproduce. That is the noise
+  floor the table above is read against, and it is a property of the mode rather than a defect.
+
+## Known failure modes
+
+Cats. Per-class test accuracy runs from **90.0% (cat)** to 98.5% (automobile), and the largest single
+error mode is 61 cat→dog and 50 dog→cat confusions. This is the expected CIFAR-10 result; the
+augmentation work narrowed it without closing it.
+
+## Working with runs
 
 Every training writes one self-describing directory. `run_manifest.json` records the git SHA and
 dirty flag, the python/torch/CUDA/GPU it ran on, the full resolved config and its hash, and a
-`runtime` block with the *resolved* device, the `channels_last` memory format, and the measured
-steady-state seconds per epoch. Nothing in the project reports a number that isn't reconstructable
-from one of these directories.
+`runtime` block with the resolved device and the measured steady-state seconds per epoch. No number
+in this project is reported that cannot be rebuilt from one of these.
 
 ```
 runs/{run_name}/
 ├── run_manifest.json      # status: running -> completed | failed | interrupted
 ├── config.yaml            # re-loads to a Config with the same hash
-├── metrics.jsonl          # one JSON object per epoch, written before the console line
+├── metrics.jsonl          # one JSON object per epoch
 ├── train.log              # console mirror
 ├── checkpoints/           # last.pth, best.pth
 ├── tb/                    # TensorBoard event files
@@ -43,90 +112,40 @@ runs/{run_name}/
 ```
 
 `tensorboard --logdir runs/` overlays every run in one board.
+`python scripts/make_report.py --runs runs/a runs/b --out docs/` builds a comparison table carrying
+only the hyperparameters that differ, into a sentinel-delimited region of `EXPERIMENTS.md` that
+regeneration rewrites without touching the prose around it.
 
-## Comparing runs
-
-```bash
-python scripts/make_report.py --runs runs/r18_runlevel runs/r18_cl_on --out docs/
-```
-
-The table carries only the hyperparameters that actually *differ* between the compared runs, plus
-the summary columns, and gets appended to `docs/EXPERIMENTS.md` alongside an overlaid val-accuracy
-curve. The first real use of it was confirming ADR-007 against full training runs — ResNet-18,
-12 epochs, identical in every setting but one:
-
-| Run | Hash | channels_last | Best val acc | s/epoch | Min |
-|---|---|---|---|---|---|
-| `runs/r18_runlevel` | `408a9d82636a` | False | 89.68 | **13.84** | 4.2 |
-| `runs/r18_cl_on` | `d60ad5395da4` | True | 89.34 | **38.78** | 8.8 |
-
-NHWC costs 2.80× the wall clock at 32×32 on this GPU, against the 2.90× that ADR-007's per-step
-benchmark predicted, and buys no accuracy. That 4% agreement is the useful part: a per-step proxy is
-trustworthy exactly when the model saturates the card, and misleading when it doesn't.
-
-Each `--section` owns a sentinel-delimited region of `EXPERIMENTS.md` and regenerating rewrites only
-that region — the hand-written findings around it are safe by construction (ADR-010). A run that
-turns out to be wrong is retracted in place, by adding `"retracted": {"reason": ..., "date": ...}`
-to its `run_manifest.json`; the row stays, struck through, with the reason visible.
-
-## Measuring performance: SimpleCNN is not an instrument
-
-A model too small to pull the GPU out of a low power state has epoch times that depend on **what ran
-before it**. Measured in Sprint 4, identical config and identical commit:
-
-| Model | Session A | Session B | Spread |
-|---|---|---|---|
-| SimpleCNN | 4.4 s/epoch | 6.4 s/epoch | ±20%, not reproducible |
-| ResNet-18-CIFAR | 13.2 s/epoch | 13.8 s/epoch | ±4% |
-
-ResNet-18 saturates the card, so it always clocks up and its timings repeat. SimpleCNN never draws
-enough to leave a lower power state, so its number is a fact about the preceding minute rather than
-about the model. **Run performance A/Bs on the model that loads the hardware.**
-
-Two more things distort a naive reading of any timing here:
-
-- `s/epoch` is the median of the run's **back half**. Epoch times ramp for several epochs — about 3
-  for ResNet-18, 7 for SimpleCNN — on top of the fixed 60–75 s of DataLoader worker spawn that every
-  Windows run pays in epoch 1. **A run under ~10 epochs cannot measure a steady state at all.**
-- `sweep.py` runs jobs back to back, so later runs start on a hotter card and run order becomes
-  confounded with temperature. Every manifest records `gpu_temp_start_c` / `gpu_temp_end_c` to make
-  that visible; within a sweep, only the accuracy columns compare across rows.
-
-Sweeps run a directory of configs back to back, continuing past a failure. Check what will run:
+Sweeps run a directory of configs back to back, continuing past a failure, and should be launched
+**detached** — this is the normal way to start one, not a recovery step:
 
 ```bash
-python scripts/sweep.py --dir configs/ablations/ --dry-run
+python scripts/sweep.py --dir configs/aug/ --dry-run
+python scripts/sweep.py --dir configs/aug/ --detach
 ```
 
-Then launch it **detached** — this is the standard way to start any sweep, not a recovery step:
+An attached sweep dies with the terminal that started it; three of Sprint 5's eight ablations were
+lost that way. Two related habits for long unattended runs: stop the machine sleeping
+(`powercfg /change standby-timeout-ac 0` — a GPU-only workload does not reset Windows' idle timer),
+and note that a run killed outright is rendered `killed` in the table by `make_report.py`, since a
+process destroyed by `TerminateProcess` runs no `finally` and cannot label its own exit.
 
-```bash
-python scripts/sweep.py --dir configs/ablations/ --detach
+## Layout
+
+```
+src/cifar/           config, seeding, data, models, engine, tracking
+scripts/             train, eval, sweep, make_report, inspect_data, lr_finder
+configs/             base + recipe + ablation configs, all inheriting
+tests/               pytest, CPU-only, mirroring the src tree
+docs/EXPERIMENTS.md  every run that informed a decision, and what it taught
+docs/ADR.md          every deviation from the frozen interfaces, and why
+docs/ARCHITECTURE.md the frozen signatures every component was built against
 ```
 
-`--detach` prints a PID and a log path and returns immediately; the sweep keeps running with no
-parent console to be killed by. `tail -f` the log to watch it.
+`DataLoader(num_workers > 0)` uses spawn-based multiprocessing on Windows, which re-imports the
+launching module in each worker, so any script building one guards the call behind
+`if __name__ == "__main__":`.
 
-An attached sweep dies with the terminal that started it, and the failure is expensive and silent:
-sprint 5 lost three of eight ablations that way. The one that was mid-startup was killed with
-`0x40010004` (`DBG_TERMINATE_PROCESS`); the two that had not begun exited `0xC000026B`
-(`STATUS_DLL_INIT_FAILED_LOGOFF`) — Python could not even load its DLLs, because the session was
-already shutting down. None of those exit codes says "training problem", and all three cost a
-re-run. At sprint 6's ~8 hours of sweeps, launching attached is a bet on nothing closing a terminal
-for a working day.
+## License
 
-Two related habits for long unattended runs:
-
-- **Stop the machine sleeping.** `powercfg /change standby-timeout-ac 0`. A GPU-only workload does
-  not reset Windows' idle timer, so the default 3-hour AC standby will suspend a sweep that is
-  working perfectly. Plugged in, "Best performance", hard surface.
-- **A killed run is visible in the table.** Manifests record `process: {pid, host}`, and
-  `make_report.py` renders a run still marked `running` whose PID is gone as `killed` (ADR-006
-  addendum). A process destroyed by `TerminateProcess` runs no `finally` and cannot label its own
-  exit, so the reader settles it instead of the writer.
-
-## Windows notes
-
-- `DataLoader(num_workers > 0)` uses spawn-based multiprocessing on Windows, which
-  re-imports the launching module in each worker. Any script that builds one must
-  guard the call behind `if __name__ == "__main__":` (see `scripts/inspect_data.py`).
+[MIT](LICENSE).
