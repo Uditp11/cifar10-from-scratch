@@ -129,8 +129,21 @@ Step 0's seed-variance runs share the F recipe and carry no new ID: they are `3b
 | E13 + Cutout + Mixup | 96.70 | 96.54 | 96.62 ± 0.11 | +1.19 |
 | **E15 + RandAugment + Cutout** | 96.62 | 96.68 | **96.65 ± 0.04** | **+1.22** |
 
-The gate (≥95.5% val as mean ± std) is met by E10, E13 and E15. **No test number has been measured
-for any row above** — every figure here is validation accuracy, and none of it is a test claim.
+The gate (≥95.5% val as mean ± std) is met by E10, E13 and E15.
+
+**Test accuracy — E15 only.** E15 was pre-declared the Sprint 7 base in `docs/sprints/06-augmentation.md`
+(commit `e63d476`) *before* any test evaluation ran, and both of its seeds were evaluated, not the
+better one. E10 and E13 were deliberately **not** evaluated: E10-vs-E15 is the contested comparison,
+and measuring both on test and keeping the winner is exactly how a test set stops being one.
+
+| Run | Best val | Final val | Test top-1 | Test top-5 | val − test |
+|---|---|---|---|---|---|
+| E15 seed 42 (`runs/resnet18_cifar_20260802_071857`) | 96.62 | 96.50 | 95.94 | 99.73 | 0.68 |
+| E15 seed 1337 (`runs/resnet18_cifar_20260802_080306`) | 96.68 | 96.64 | 96.17 | 99.75 | 0.51 |
+| **Mean ± std** | **96.65 ± 0.04** | — | **96.06 ± 0.16** | — | **0.59** |
+
+Every val figure for E10, E13 and E9 remains a validation number only, and none of them is a test
+claim.
 
 ## Sprint 7 — Final
 
@@ -252,6 +265,31 @@ interleave blocks** — E9, E10, E13, E15, then the whole block again — rather
 config's repeats back to back. Same total compute, but between-time noise then spreads across
 configs instead of nesting inside them, and the within-config spread becomes an estimate that can
 actually speak to between-config differences. See ADR-011.
+
+**Sprint 6 — the val/test gap did not widen at 200 epochs, and selection inflation shrank.** The
+question going into eval was whether choosing the best of 200 epochs costs more optimism than
+choosing the best of 120 — 67% more draws at the same lottery. Measured: E15's val − test is
+**0.59** (0.68 and 0.51 across its two seeds), against F's **0.48** at 120 epochs and E0's **1.47**
+at 30. The apparent widening of 0.11 is smaller than the 0.17 spread between E15's own two seeds, so
+**it is not resolvable and should not be reported as a widening.** The sharper measurement is
+selection inflation directly — best val minus final-epoch val — which came to **0.08** at 200 epochs
+against F's **0.10** at 120. It went *down*. That confirms Sprint 5's mechanism rather than the naive
+count: inflation scales with how much the val curve is still moving at the end, and a cosine annealed
+to zero over 200 epochs leaves a flatter tail than over 120. More epochs to choose between did not
+cost more optimism, because the extra epochs were more alike. What remains is a genuine val/test
+offset of roughly half a point, consistent across every long run in this project — the fixed val
+split is slightly easier than CIFAR-10's official test split, and that offset is a property of the
+split, not of the training. **Practical consequence: this project's val numbers can be read as
+roughly 0.5 optimistic against test, and that correction is stable enough to quote — but it is a
+correction, not a substitute. No val figure in this document is a test claim.**
+
+**Sprint 6 — M1 in context.** E15's **96.06 ± 0.16 test top-1** is **+1.46** over Sprint 5's measured
+94.60, and the highest number this project has produced. It is worth stating what it did and did not
+take: the model, the optimizer, the schedule and the epoch budget are all Sprint 5's, unchanged. The
+entire gain came from augmentation, of which Cutout alone accounts for roughly three-quarters. And
+against the 89.28 that the same network reaches with crop and flip switched off, every augmentation
+in this project — the two lines from Sprint 1 plus everything in Sprint 6 — is worth about 6.8
+points, of which Sprint 6 contributed 1.2.
 
 Write these as you go, in prose, one short paragraph each. The table holds the numbers; this section holds the understanding. Candidates that usually turn out to be worth writing up:
 
