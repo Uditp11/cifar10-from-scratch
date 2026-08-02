@@ -80,7 +80,21 @@ Never swallow an exception silently. Never `except: pass`.
 - Seed at process start: Python `random`, `numpy`, `torch`, `torch.cuda`.
 - `DataLoader` gets a `worker_init_fn` and a seeded `generator`.
 - `cfg.repro.deterministic=True` sets `torch.use_deterministic_algorithms(True)` and `cudnn.deterministic=True`, `cudnn.benchmark=False`. Default is `False` (fast mode) — the repro check flips it on.
-- Any run that can't be reproduced within ±0.15% is a bug, not a quirk.
+- **`deterministic=True` — runs reproduce bit-identically.** Not "within a tolerance": identical
+  `metrics.jsonl` scalars and identical weights. Verified by C8.1 on 2026-08-02 — three 10-epoch
+  runs of `configs/repro_check.yaml`, model weights all hashing to `866f747125539331`, one of which
+  straddled an AC→battery transition mid-run under CPU contention at 2.1× the wall clock. Machine
+  state does not move the number in this mode. Any difference at all here is a bug.
+- **`deterministic=False` (the default) — expect ~0.1–0.2 run-to-run at a fixed seed; 0.26 observed.**
+  `cudnn.benchmark` picks kernels by timing them, so which kernel runs — and therefore the
+  floating-point reduction order — depends on machine state that no seed controls. `cfg.repro.seed`
+  does not make a fast-mode run reproducible, and this is a property of the mode, not a defect to
+  fix. It is the noise floor every ablation in `EXPERIMENTS.md` is read against: use fast mode for
+  throughput and read results against the floor, deterministic mode when a result must reproduce.
+
+  *(These two lines replace "any run that can't be reproduced within ±0.15% is a bug, not a quirk".
+  That figure belonged to neither mode — deterministic mode is exact, and fast mode measured 0.26 —
+  and it stated a contract the default configuration cannot meet.)*
 
 ## Logging
 

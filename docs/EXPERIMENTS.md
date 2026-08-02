@@ -291,6 +291,51 @@ against the 89.28 that the same network reaches with crop and flip switched off,
 in this project — the two lines from Sprint 1 plus everything in Sprint 6 — is worth about 6.8
 points, of which Sprint 6 contributed 1.2.
 
+**C8.1 (pulled forward from Sprint 8) — deterministic mode is exact, and immune to the machine state
+that moves fast mode.** Three 10-epoch runs of `configs/repro_check.yaml` (hash `288acd3834cd`,
+`deterministic: true`), compared on every logged scalar and on a SHA-256 of the sorted model
+`state_dict`:
+
+| Run | Window (local) | Wall clock | s/epoch | Scalar diffs vs A | `best.pth` weights |
+|---|---|---|---|---|---|
+| A | 19:15:25 → 19:18:41, on AC | 196 s | 15.90 | — | `866f747125539331` |
+| B | 19:19:41 → 19:22:47, on AC | 186 s | 15.14 | 0 | `866f747125539331` |
+| C | 19:35:18 → 19:42:17, **on battery, 10 CPU busy-loops** | **419 s** | 16.68 | 0 | `866f747125539331` |
+
+Run C was not a gentle perturbation. The laptop was unplugged at 19:27:20 and replugged at 19:39:36
+(`Kernel-Power` event 105), so C started eight minutes into battery operation and **straddled the
+transition back to AC mid-run**, with ten busy-loop processes contending for the CPU and the GPU
+starting 18 °C cooler. It took **2.1× the wall clock of run A** and produced final-epoch
+`train_loss` of `0.77964435632412254` — the same seventeen significant digits as both AC runs. The
+only field that differed anywhere was `timestamp`.
+
+Two configuration findings worth recording rather than discovering later. First,
+`torch.use_deterministic_algorithms(True)` **did not raise** — every op in ResNet-18-CIFAR plus the
+AMP path has a deterministic kernel available, so no `warn_only` escape hatch is needed and none was
+used. Second, `CUBLAS_WORKSPACE_CONFIG=:4096:8` is set inside `seeding.seed_everything` *before* any
+CUDA work, which is what keeps cuBLAS from raising on CUDA ≥ 10.2; setting it later, or from a
+shell, would be fragile. Determinism also cost almost nothing here — 15.1–16.7 s/epoch against fast
+mode's 12.6, about 25%, on a model this small.
+
+The reason this matters beyond ticking off M2: it answers the Step 0 confound directly. Step 0 could
+not separate "the Energy Saver state changed the result" from "runs vary by 0.26 anyway", because
+both arms were fast mode. C8.1 shows that **in deterministic mode a power-state change mid-run moves
+nothing at all**, which localises fast mode's variance where it was suspected — `cudnn.benchmark`
+selecting kernels by wall-clock timing, and the reduction order following the kernel. That is the
+whole basis for the two-claim wording now in `CLAUDE.md`, and the numbers in it come from this run.
+
+**Sprint 6 — a prediction that was wrong, recorded as such.** Going into evaluation, Udit predicted
+that selecting the best of 200 epochs would *widen* the val/test gap relative to 120 — 67% more
+draws at the same lottery, so more optimism harvested. **It didn't.** The gap went 0.48 → 0.59,
+a difference smaller than the 0.17 spread between E15's own two seeds, and the direct measurement of
+selection inflation — best val minus final-epoch val — went **down**, 0.10 → 0.08. The mechanism the
+data supports is the one Sprint 5 proposed and this now confirms: inflation tracks how much the val
+curve is still moving at the end, not how many epochs were available to choose from, and a cosine
+annealed to zero over 200 epochs leaves a flatter tail than over 120. The extra draws were more
+alike rather than more numerous. The residual ~0.5 is genuine split offset. Worth recording because
+the hypothesis was reasonable, specific, and testable, and the test is what settled it — the
+mechanism is now measured instead of assumed.
+
 Write these as you go, in prose, one short paragraph each. The table holds the numbers; this section holds the understanding. Candidates that usually turn out to be worth writing up:
 
 - How much basic augmentation (crop + flip) is actually worth. Expect the largest single delta in the whole document.
