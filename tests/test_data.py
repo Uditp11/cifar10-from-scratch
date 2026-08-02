@@ -17,6 +17,7 @@ from cifar.data.transforms import (
     build_train_transform,
 )
 from cifar.seeding import seed_everything
+from tests.conftest import requires_cifar10
 
 
 def _base_cfg() -> Config:
@@ -42,28 +43,33 @@ def cfg() -> Config:
     return _base_cfg()
 
 
+@requires_cifar10
 def test_split_sizes(cfg):
     tr, va, te = build_datasets(cfg)
     assert len(tr) == 45000 and len(va) == 5000 and len(te) == 10000
 
 
+@requires_cifar10
 def test_train_val_disjoint(cfg):
     tr, va, _ = build_datasets(cfg)
     assert set(tr.indices).isdisjoint(set(va.indices))
 
 
+@requires_cifar10
 def test_val_split_is_stratified(cfg):
     _, va, _ = build_datasets(cfg)
     counts = Counter(va.dataset.targets[i] for i in va.indices)
     assert all(c == 500 for c in counts.values())
 
 
+@requires_cifar10
 def test_val_split_is_fixed_across_seeds(cfg):
     a = build_datasets(_replace_seed(cfg, 1))[1].indices
     b = build_datasets(_replace_seed(cfg, 999))[1].indices
     assert list(a) == list(b)
 
 
+@requires_cifar10
 def test_normalized_batch_statistics(cfg):
     cfg_no_aug = _override_aug(cfg, random_crop_padding=0, horizontal_flip_p=0.0)
     tr, _, _ = build_dataloaders(cfg_no_aug)
@@ -73,11 +79,13 @@ def test_normalized_batch_statistics(cfg):
     assert abs(x.std().item() - 1.0) < 0.15
 
 
+@requires_cifar10
 def test_eval_transform_is_deterministic(cfg):
     _, va, _ = build_datasets(cfg)
     assert torch.equal(va[0][0], va[0][0])
 
 
+@requires_cifar10
 def test_train_transform_is_stochastic(cfg):
     tr, _, _ = build_datasets(cfg)  # crop+flip enabled
     seed_everything(0)
@@ -87,18 +95,21 @@ def test_train_transform_is_stochastic(cfg):
     assert not torch.equal(a, b)
 
 
+@requires_cifar10
 def test_disabled_aug_is_identity(cfg):
     cfg0 = _override_aug(cfg, random_crop_padding=0, horizontal_flip_p=0.0)
     tr, _, _ = build_datasets(cfg0)
     assert torch.equal(tr[0][0], tr[0][0])
 
 
+@requires_cifar10
 def test_loader_is_reproducible_across_runs(cfg):
     order_a = _first_batch_labels(build_dataloaders(cfg)[0])
     order_b = _first_batch_labels(build_dataloaders(cfg)[0])
     assert order_a == order_b
 
 
+@requires_cifar10
 def test_build_datasets_works_from_any_cwd(cfg, monkeypatch, tmp_path):
     # data.root resolved before chdir so this reuses the already-downloaded
     # cache instead of triggering a fresh download from tmp_path.
