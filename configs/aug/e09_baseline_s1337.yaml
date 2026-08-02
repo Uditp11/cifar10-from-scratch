@@ -1,0 +1,8 @@
+# Second repeat of e09_baseline. Step 0 measured sigma ~= 0.21 with same-seed reruns
+# differing by up to 0.26, so this is a repeat first and a "different seed"
+# second -- the seed label is what makes the two runs distinguishable in the
+# report, not what makes them differ.
+inherits: e09_baseline.yaml
+
+repro:
+  seed: 1337
