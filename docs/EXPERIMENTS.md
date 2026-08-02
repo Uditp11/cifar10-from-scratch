@@ -100,16 +100,37 @@ the thing Sprint 6's augmentation work has the most room to move.
 
 ## Sprint 6 — Augmentation
 
-| ID | Run | Hash | Augmentation | Epochs | Val acc | Δ vs E9 | Min | Notes |
-|---|---|---|---|---|---|---|---|---|
-| E9 | | | baseline (crop+flip) | 200 | | — | | Reference for this block |
-| E10 | | | + Cutout(1,16) | 200 | | | | |
-| E11 | | | + Mixup α=0.2 | 200 | | | | |
-| E12 | | | + CutMix α=1.0 | 200 | | | | |
-| E13 | | | + Cutout + Mixup | 200 | | | | |
-| E14 | | | + Cutout + CutMix | 200 | | | | |
-| E15 | | | + RandAugment(2,9) + Cutout | 200 | | | | |
-| E16 | | | Cutout length 8 / 16 / 20 | 200 | | | | Sensitivity sweep |
+**The numbers live in the generated `sprint-6-step0` and `sprint-6` regions at the bottom of this
+file.** This block is the ID map only, on the same principle as Sprint 5's.
+
+The sprint was redesigned on 2026-08-01 from eight single-seed configs to four configs at two
+repeats, on the grounds that eight numbers separated by less than the noise floor are eight numbers
+nobody can rank. **E11, E12, E14 and E16 were therefore never run** and their IDs are retired rather
+than reused — a reader who remembers them should find out what happened to them, which is the same
+reason a wrong run is retracted rather than deleted.
+
+| ID | Config | Hash (seed 42 / 1337) | Change from the Sprint 5 recipe |
+|---|---|---|---|
+| E9 | `aug/e09_baseline` | `e0e15fda06b7` / `049fbaf347e5` | 200 epochs, no new augmentation |
+| E10 | `aug/e10_cutout` | `e113dbf2105f` / `91080f1b0aaf` | + Cutout(1, 16) |
+| E13 | `aug/e13_cutout_mixup` | `4553d71e9c01` / `9569fe8a2515` | + Cutout + Mixup α=0.2, `batch_aug_prob=1.0` |
+| E15 | `aug/e15_randaugment_cutout` | `56ebde55573d` / `a7ddfc7c1853` | + Cutout + RandAugment(2, 9) |
+| ~~E11, E12, E14, E16~~ | — | — | Dropped in the redesign; never run |
+
+Step 0's seed-variance runs share the F recipe and carry no new ID: they are `3b1347d7678d`
+(seed 42, identical to F), `f7d31e9a78fb` (1337) and `084880933381` (2024).
+
+**Summary — mean ± std over two repeats, val accuracy:**
+
+| Config | seed 42 | seed 1337 | Mean ± std | Δ vs E9 |
+|---|---|---|---|---|
+| E9 baseline | 95.50 | 95.36 | 95.43 ± 0.10 | — |
+| E10 + Cutout | 96.24 | 96.32 | 96.28 ± 0.06 | +0.85 |
+| E13 + Cutout + Mixup | 96.70 | 96.54 | 96.62 ± 0.11 | +1.19 |
+| **E15 + RandAugment + Cutout** | 96.62 | 96.68 | **96.65 ± 0.04** | **+1.22** |
+
+The gate (≥95.5% val as mean ± std) is met by E10, E13 and E15. **No test number has been measured
+for any row above** — every figure here is validation accuracy, and none of it is a test claim.
 
 ## Sprint 7 — Final
 
@@ -160,6 +181,77 @@ the thing Sprint 6's augmentation work has the most room to move.
 **Sprint 5 — E3 (no warmup, +0.22) is a hypothesis, not a finding.** Removing the 5-epoch warmup scored **95.30%**, above F and above its own expected band. A plausible mechanism: warmup's established benefit is largely a *large-batch* effect — it exists to stop the first few high-LR steps from wrecking a network whose gradient estimates are being averaged over thousands of samples — and at batch 128 with LR 0.1 there is very little to stabilize, so neutral-to-slightly-negative is an unsurprising outcome rather than a contradiction. Against that, the effect is 0.22 points on a single seed, F and E3 differ by less than E4 does from F, and none of these three separations is resolvable without repeats. **The recipe is not changing on this.** Warmup stays in, both because the evidence does not support removing it and because Sprints 6 and 7 raise the epoch count and may raise the batch size, which is the regime where warmup is supposed to matter. Sprint 7's seed-variance runs (E17–E19) are the right instrument; if seed-to-seed std there is ≲0.1, E3 and E4 both become real and worth acting on, and if it is ~0.25 they were always noise.
 
 **Sprint 5 — three ablations were lost to a console teardown, and the run that recorded it lied for fourteen hours.** The eight-config sweep completed five runs and then died: the launching process exited, and Windows destroyed its children. `abl_step_lr` was ~30 s into startup and took `0x40010004` (`DBG_TERMINATE_PROCESS`); `abl_wd_1e4` and `abl_wd_on_bn` had not begun and exited `0xC000026B` (`STATUS_DLL_INIT_FAILED_LOGOFF`) — the interpreter could not load its DLLs because the session was already shutting down. Not one of those exit codes describes a training fault, and all three configs re-ran clean afterwards with no change. Two things came out of it. First, `sweep.py --detach` now launches sweeps with no controlling console, which is the standard way to start one from here on — Sprint 6 is roughly eight hours of sweeps and this cannot be a recovery procedure. Second, the killed run left `runs/resnet18_cifar_20260801_061849` sitting at `status: "running"` with zero epochs logged, because a process destroyed by `TerminateProcess` executes no `finally` and cannot label its own exit. ADR-006 had explicitly claimed that could not happen; its addendum records why the reasoning failed and moves the fix to the reader, where manifests now carry `process: {pid, host}` and `make_report.py` renders a `running` run whose PID is dead as `killed`. The stub directory was deleted rather than retracted: retract-never-delete protects *claims*, and a zero-epoch run that never reached the ledger makes none.
+
+**Sprint 6 step 0 — the seed is not what varies, and the noise floor is still open.** Five runs of
+the unchanged F recipe at 120 epochs produced 95.02, 95.06, 95.08, 95.14 and 95.40: **95.14 ± 0.15**
+over all five, **95.16 ± 0.21** over the three clean seeds (42/1337/2024). The headline number is not
+the mean, it is this: **two runs at an identical seed and an identical config hash differed by
+0.26** (seed 1337), and another such pair by 0.06 (seed 42). With `deterministic=False` and
+`cudnn.benchmark=True`, `cfg.repro.seed` does not determine the outcome — benchmark-mode kernel
+selection and the reduction orders it implies vary between processes. So what step 0 measured is
+**run-to-run variance, not seed-to-seed variance**, and the seed label is close to decorative at this
+precision. Two consequences. First, this lands in the sprint file's middle branch (σ ≈ 0.20–0.25):
+single-seed rows are not interpretable and the ablation table was run at two repeats. Second, and
+awkwardly, **CLAUDE.md's "any run that can't be reproduced within ±0.15% is a bug" is not met in the
+default fast mode** — 0.26 at a fixed seed exceeds it by a factor of 1.7. That is recorded here as a
+known-open gap rather than quietly repaired, because the contract as written is about `repro.seed`
+and the measurement says `repro.seed` is not what is being reproduced. One process note, since this
+document's own rule is that a wrong claim is withdrawn rather than deleted: an intermediate estimate
+during this sprint put σ at 0.06 from the first three runs and concluded E4 was a 4.6σ result that
+had falsified ADR-003. **That was wrong.** One of those three runs was the throttled seed-1337 run,
+which landed mid-pack; its clean repeat came in at 95.40 and quadrupled the estimate. The lesson is
+the one the confidence interval was already saying out loud — σ from three runs has a 95% CI of
+[0.03, 0.38] and cannot carry a conclusion that flips an ADR.
+
+**Sprint 6 step 0 — what σ ≈ 0.21 does to every Sprint 5 row.** Two single-seed runs differ with
+std σ√2 ≈ **0.30**. Against F: E4 (wd on BN/bias, +0.40) is **1.4σ**, E3 (no warmup, +0.22) 0.7σ,
+E2 (step LR, −0.08) 0.3σ, E5 (no smoothing, −0.22) 0.7σ — **none of them resolvable**. E6 (wd 1e-4,
+−0.66) is 2.2σ and marginal. Only E1 (−1.06, 3.6σ), E7 (−1.72, 5.8σ) and E8 (−5.80, 19.6σ) are
+established. Sprint 5's suspicion that its top four runs spanning 0.48 points were all noise is
+**confirmed**, and so is the hedge it wrote for E4: "+0.40 is close enough to plausible CIFAR
+seed-to-seed spread that it cannot be separated from noise here" was exactly right. **ADR-003 is
+unchanged** — retained on its original theoretical argument, with E4 still recorded against it and
+still unresolved. Settling it needs E4 at three or more repeats, which no sprint has yet spent.
+
+**Sprint 6 — Cutout is nearly all of it, and the rest is probably real but not established.** Four
+configs at two repeats, 200 epochs: E9 baseline **95.43 ± 0.10**, E10 + Cutout **96.28 ± 0.06**,
+E13 + Cutout + Mixup **96.62 ± 0.11**, E15 + RandAugment + Cutout **96.65 ± 0.04**. The gate
+(≥95.5% as mean ± std) is met three times over. But the table produced its own noise estimate that
+disagrees with step 0's, and **the disagreement is left open here rather than resolved in favour of
+whichever is convenient.** The two estimates: **0.083** pooled within-config across the four matched
+pairs (4 df), and **0.209** from step 0's three clean seeds (2 df). Neither is authoritative.
+0.083 is better-conditioned but structurally cannot answer the question being asked of it — each
+pair ran **back to back**, so it measures noise over minutes under one machine state, while E9 ran
+first and E15 seven hours later across a machine that changed state twice. The sweep design nests
+time *inside* config, which is exactly the confound it should have spread across configs. 0.209, on
+the other hand, is inflated by a single run (clean 1337 at 95.40) sitting 0.26 above a tight cluster
+of four, and rests on 2 degrees of freedom. There is a natural experiment in the table that leans
+low, and it belongs here precisely because it cuts against the more dramatic reading: **E9 is the one
+pair that straddles the machine-state change** (15.57 vs 12.59 s/epoch) and its spread is **0.14**,
+squarely among the three constant-state pairs (0.08, 0.16, 0.06). The Energy-Saver effect that
+inflated step 0 did not reproduce when a pair straddled it. That is one pair and proves nothing, but
+it is evidence and it points at the honest σ being nearer the low end. **What survives either
+reading:** Cutout's **+0.85** over the baseline (4.1σ even at σ=0.209); **E13 and E15 are
+indistinguishable** at 0.03 apart, which no σ rescues; and the gate. **What does not survive:**
+whether Mixup or RandAugment adds anything *on top of* Cutout. Both gains (+0.34 and +0.37,
+replicated in the same direction by two independent configs) are 4.1–4.5σ at 0.083 and only 1.6–1.8σ
+at 0.209. Probably real. Not established. The write-up should not round that up.
+
+**Sprint 6 — the honest scale, and a methodology fix.** Crop and flip bought **+5.80** (Sprint 5,
+E8). Cutout bought **+0.85**. Going 120 → 200 epochs bought perhaps **+0.29** (1.4σ — weak). Mixup
+or RandAugment on top of Cutout bought **+0.35**, contested. Two lines of transform config from
+Sprint 1 still outweigh everything this sprint added by more than four to one, and the sprint file's
+instruction to say so plainly is worth honouring: we stacked more augmentation and gained about a
+point over a strong baseline, with one ingredient doing three-quarters of it. Two corrections to
+readings that were tempting and wrong. First, **"every config peaked at epoch 188–198 of 200, so
+none had stopped improving" is overread and is withdrawn** — with warmup into cosine annealing to
+`min_learning_rate`, the last epochs run at a vanishing LR and best val lands there close to by
+construction. Sprint 7's 300-epoch plan may well be right, but this is not the evidence for it; the
+evidence would be a val curve still climbing at a non-trivial LR. Second, **the next sweep should
+interleave blocks** — E9, E10, E13, E15, then the whole block again — rather than running each
+config's repeats back to back. Same total compute, but between-time noise then spreads across
+configs instead of nesting inside them, and the within-config spread becomes an estimate that can
+actually speak to between-config differences. See ADR-011.
 
 Write these as you go, in prose, one short paragraph each. The table holds the numbers; this section holds the understanding. Candidates that usually turn out to be worth writing up:
 
@@ -224,3 +316,39 @@ it will survive any number of regenerations.
 
 *Generated by `make_report.py --section sprint-5`. Edits inside this region are overwritten; write findings outside it.*
 <!-- END GENERATED: sprint-5 -->
+
+<!-- BEGIN GENERATED: sprint-6-step0 -->
+## Sprint 6 step 0 - seed variance on the unchanged F recipe (120 epochs)
+
+| Run | Hash | seed | Best val acc | Best epoch | s/epoch | GPU C in/out | Min | Status |
+|---|---|---|---|---|---|---|---|---|
+| `runs/resnet18_cifar_20260801_033919` | `3b1347d7678d` | 42 | 95.08 | 115 | 13.19 | 42/65 | 28.6 | completed |
+| `runs/resnet18_cifar_20260801_230508` | `f7d31e9a78fb` | 1337 | 95.14 | 109 | 15.37 | 39/69 | 41.5 | completed |
+| `runs/resnet18_cifar_20260801_234729` | `084880933381` | 2024 | 95.06 | 107 | 12.94 | 47/76 | 28.5 | completed |
+| `runs/resnet18_cifar_20260802_001651` | `3b1347d7678d` | 42 | 95.02 | 113 | 12.93 | 53/75 | 29.6 | completed |
+| `runs/resnet18_cifar_20260802_011917` | `f7d31e9a78fb` | 1337 | - | - | - | 39/- | - | killed |
+| `runs/resnet18_cifar_20260802_014221` | `f7d31e9a78fb` | 1337 | 95.40 | 119 | 15.35 | 43/80 | 29.3 | completed |
+
+![val accuracy](figures/comparison_sprint-6-step0.png)
+
+*Generated by `make_report.py --section sprint-6-step0`. Edits inside this region are overwritten; write findings outside it.*
+<!-- END GENERATED: sprint-6-step0 -->
+
+<!-- BEGIN GENERATED: sprint-6 -->
+## Sprint 6 - the four-config augmentation table (200 epochs, two repeats each)
+
+| Run | Hash | batch_aug_prob | cutout_holes | mixup_alpha | randaugment_n | seed | Best val acc | Best epoch | s/epoch | GPU C in/out | Min | Status |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| `runs/resnet18_cifar_20260802_023914` | `e0e15fda06b7` | 0 | 0 | 0 | 0 | 42 | 95.50 | 189 | 15.57 | 44/76 | 52.1 | completed |
+| `runs/resnet18_cifar_20260802_033208` | `049fbaf347e5` | 0 | 0 | 0 | 0 | 1337 | 95.36 | 191 | 12.59 | 52/60 | 46.2 | completed |
+| `runs/resnet18_cifar_20260802_041910` | `e113dbf2105f` | 0 | 1 | 0 | 0 | 42 | 96.24 | 191 | 12.58 | 42/61 | 43.4 | completed |
+| `runs/resnet18_cifar_20260802_050322` | `91080f1b0aaf` | 0 | 1 | 0 | 0 | 1337 | 96.32 | 189 | 12.64 | 42/67 | 43.6 | completed |
+| `runs/resnet18_cifar_20260802_054746` | `4553d71e9c01` | 1 | 1 | 0.2 | 0 | 42 | 96.70 | 188 | 13.02 | 42/67 | 44.9 | completed |
+| `runs/resnet18_cifar_20260802_063327` | `9569fe8a2515` | 1 | 1 | 0.2 | 0 | 1337 | 96.54 | 192 | 12.95 | 42/67 | 44.7 | completed |
+| `runs/resnet18_cifar_20260802_071857` | `56ebde55573d` | 0 | 1 | 0 | 2 | 42 | 96.62 | 191 | 12.57 | 42/68 | 43.4 | completed |
+| `runs/resnet18_cifar_20260802_080306` | `a7ddfc7c1853` | 0 | 1 | 0 | 2 | 1337 | 96.68 | 198 | 15.47 | 42/71 | 49.0 | completed |
+
+![val accuracy](figures/comparison_sprint-6.png)
+
+*Generated by `make_report.py --section sprint-6`. Edits inside this region are overwritten; write findings outside it.*
+<!-- END GENERATED: sprint-6 -->

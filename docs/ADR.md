@@ -171,3 +171,38 @@ Sprint 8's C8.5 already specifies the right shape — "regenerate the table with
 **Alternatives.** Keep tables in a separate generated file and `include` it (rejected: markdown has no include, and splitting the ledger puts the numbers and the reasoning about them in two places — the failure mode this document exists to avoid). Regenerate the whole file from a template (rejected: makes the prose a generator input, so every finding would have to live in a Python string or a sidecar). Delete retracted runs (rejected: a ledger whose job is being checkable cannot have rows disappear; a reader who remembers a number needs to find out what happened to it, not fail to find it).
 
 **Consequences.** Prose in `EXPERIMENTS.md` is safe by construction, so `--all` is now genuinely re-runnable and Sprint 5's sweep can regenerate its section after every job. Each section carries its own figure (`comparison_{section}.png`) so regenerating one cannot overwrite another's. Retracted runs keep their directory and their row forever, which is the point — the two Sprint 4 retractions above are the worked example. The markers are visible in raw markdown and invisible when rendered.
+
+---
+
+## ADR-011 — Sweep repeats are interleaved across configs, not nested inside them
+**Date:** 2026-08-02 · **Sprint:** 6 · **Status:** accepted
+
+**Context.** Sprint 6's four-config table ran each config's two repeats back to back:
+`E9, E9, E10, E10, E13, E13, E15, E15`. That ordering makes the within-config spread a
+*within-minutes* number — the two runs of a pair share a machine state, a thermal state and a
+position in the evening. Pooled across the four pairs it came to 0.083, against 0.209 from step 0's
+seed-variance runs, which spanned seven hours and a power-profile change.
+
+The 0.083 cannot be used to judge E9 against E15, because those two ran seven hours apart and the
+estimate was constructed to exclude exactly that. The design nests the time variable inside the
+config variable, so config and sweep position are confounded and the cheaper noise estimate is the
+one that cannot answer the question. This is not a small effect here: whether Mixup or RandAugment
+beats plain Cutout is 4.5σ under one estimate and 1.8σ under the other, and the sweep produced no
+way to choose between them.
+
+**Decision.** A sweep with repeats runs one full block of every config, then repeats the block:
+`E9, E10, E13, E15, E9, E10, E13, E15`. Identical total compute, no code change — it is purely a
+question of what `sweep.py --dir` is pointed at and how the configs sort.
+
+**Alternatives.** Randomise run order (rejected: with n=8 a random draw can still nest badly, and
+a fixed block is reproducible and inspectable). Hold conditions constant instead (rejected: a
+seven-hour sweep on a laptop cannot hold thermal state constant, and pretending otherwise is how the
+confound got missed). Estimate σ from dedicated repeat runs only (rejected: that is step 0, and it
+costs extra GPU hours to measure something the table can measure for free if ordered correctly).
+
+**Consequences.** Within-config spread becomes an estimate of the noise that actually applies to
+between-config comparisons, at zero extra cost. The `Min` and `s/epoch` columns stay
+non-comparable within a sweep either way — `EXPERIMENTS.md` already says so, and interleaving does
+not fix thermal drift, it only stops that drift from being aliased onto one config. Sprint 6's own
+table keeps the nested ordering it was run with; its σ ambiguity is recorded as open rather than
+retro-fitted.
