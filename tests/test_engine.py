@@ -304,11 +304,26 @@ def test_fit_writes_checkpoints_and_manifest(tmp_path):
 
 
 def test_resume_matches_uninterrupted_run(tmp_path):
-    """Train 4 epochs straight vs 2 + resume 2; final val acc must match."""
+    """Train 4 epochs straight vs 2 + resume 2; final val acc must match.
+
+    Deliberately on a **constant** LR with no warmup. Cosine and warmup both
+    scale their horizons to `cfg.train.epochs`, so a 2-epoch config and a
+    4-epoch config put a different learning rate on epoch 2 -- the two runs then
+    diverge before any resume happens, and the test measures the schedule rather
+    than the thing it names. That is a real defect this test had: it passed on
+    one platform by luck of the tolerance and failed on CI, where the straight
+    run finished at 9.4% against the resumed run's 29.7%. With the schedule held
+    flat, any difference left is state that `resume_from` failed to restore.
+    """
 
     def train(epochs: int, resume_from=None) -> tuple[float, Run]:
         seed_everything(0)
-        cfg = cfg_for(tmp_path, train__epochs=epochs, optim__warmup_epochs=1)
+        cfg = cfg_for(
+            tmp_path,
+            train__epochs=epochs,
+            optim__warmup_epochs=0,
+            optim__scheduler="constant",
+        )
         model = build_model(cfg)
         run = Run(cfg)
         trainer = Trainer(model, tiny_loaders(n=64), cfg, run)

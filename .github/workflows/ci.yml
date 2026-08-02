@@ -19,7 +19,7 @@ concurrency:
 jobs:
   lint-and-test:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 35
 
     strategy:
       fail-fast: false
@@ -69,12 +69,18 @@ jobs:
       # first run of this workflow proved why: `pytest` inherited the download,
       # produced no output for nineteen minutes, and was killed by the job
       # timeout with no indication of what it had been doing. Here a stall costs
-      # five minutes, is attributed to the right step, and `continue-on-error`
-      # lets the suite proceed -- the ten dataset tests then skip visibly via
-      # `requires_cifar10` instead of hanging the job.
+      # a bounded 20 minutes, is attributed to the right step, and
+      # `continue-on-error` lets the suite proceed -- the ten dataset tests then
+      # skip visibly via `requires_cifar10` instead of hanging the job.
+      #
+      # 20 and not 5: the first attempt used a 5-minute bound and reached 26.4%.
+      # The host is simply slow from cloud runners. This is paid once -- the step
+      # populates the cache above, and later runs restore it in seconds. The
+      # bound stays strictly below the job's 35 so a stalled fetch can never be
+      # what consumes the job.
       - name: Fetch CIFAR-10
         continue-on-error: true
-        timeout-minutes: 5
+        timeout-minutes: 20
         run: |
           python - <<'PY'
           from torchvision.datasets import CIFAR10
