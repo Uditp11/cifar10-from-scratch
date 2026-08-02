@@ -234,21 +234,49 @@ same seed are then bit-identical, so run-to-run noise at fixed seed is **zero** 
 between two configs is the effect plus *seed* variance only — cleanly separated, and seed variance is
 the quantity that was actually of interest.
 
-**Cost — measured, not assumed.** Three modes, 10 epochs each, run in two interleaved blocks per
+**Cost — measured, and analysed paired.** Three modes, 10 epochs each, in two interleaved blocks per
 ADR-011, medians over epochs 4–10:
 
-| Mode | Mean median s/epoch | vs default |
-|---|---|---|
-| `cudnn_benchmark: true` (default) | 13.99 | — |
-| **`cudnn_benchmark: false`** | **14.07** | **+0.6%** |
-| `deterministic: true` | 15.93 | +13.8% |
+| Block | `benchmark: true` (default) | `benchmark: false` | `deterministic: true` |
+|---|---|---|---|
+| 1 | 14.98 | 13.86 | 16.59 |
+| 2 | 13.01 | 14.28 | 15.26 |
 
-**+0.6% is indistinguishable from free** and should be read that way rather than as a precise figure:
-the block-to-block spread *within* the default mode was 13.01 to 14.98, wider than the gap being
-measured. The honest claim is that turning benchmark off costs nothing detectable, while full
-determinism costs about 14%. An earlier estimate of ~25% for determinism is superseded — it compared
-runs from different sessions on a drifting thermal state, which is the confound this measurement was
-built to avoid.
+The absolute numbers drift badly: the default mode alone moves 13.01 → 14.98 between blocks, which is
+~14% of its own mean and as large as the effect being looked for. **Pooling each mode to one mean and
+comparing the means throws away exactly what interleaving bought.** Every block contains all three
+modes under one thermal state, so the valid comparison is the paired within-block difference, where
+the drift cancels:
+
+| Paired difference vs default | Block 1 | Block 2 | Verdict |
+|---|---|---|---|
+| `cudnn_benchmark: false` | **−1.12 s (−7.5%)** | **+1.27 s (+9.8%)** | Signs disagree — **not resolvable** |
+| `deterministic: true` | **+1.61 s (+10.8%)** | **+2.25 s (+17.3%)** | Both positive — **directionally established** |
+
+The two claims therefore rest on different footing, and stating them alike would be wrong in both
+directions:
+
+- **`cudnn_benchmark: false` costs nothing detectable.** The paired differences are −7.5% and +9.8%:
+  opposite signs, so this measurement cannot say which is faster, let alone by how much. Free at the
+  available resolution, and that is the whole basis for the decision above.
+- **`deterministic: true` costs about 14%** — the mean of +10.8% and +17.3%. Both blocks agree in
+  sign and the effect is large against each block's own baseline. Two blocks is one degree of
+  freedom, so 14% is a central estimate with a real range of roughly **11–17%**, not a precise figure.
+
+An earlier version of this entry applied its skepticism asymmetrically: it declined to state +0.6% as
+precise because block-to-block spread swamped it, then stated 13.8% for determinism, which the same
+spread undercuts just as much. The paired analysis above resolves that properly rather than by
+hedging both numbers equally — one difference survives the drift and the other does not.
+
+The recommendation is unchanged either way. `benchmark: false` is adopted because it is free and
+removes the noise; what determinism costs on top of it does not bear on that.
+
+**Number-of-record:** the README's Reproducibility section carries **"about 14%"** for determinism,
+and nothing for `benchmark: false` beyond the fact that sweeps set it. A re-measurement must update
+this entry and that section together, or the two will drift apart.
+
+An earlier estimate of ~25% for determinism is superseded — it compared runs from different sessions
+on a drifting thermal state, which is the confound this measurement was built to avoid.
 
 **Alternatives.** `deterministic: true` for sweeps (rejected: ~14% for no further benefit, since
 benchmark alone already gives bit-identical runs on this workload — and `use_deterministic_algorithms`

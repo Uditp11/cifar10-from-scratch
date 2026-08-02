@@ -319,8 +319,13 @@ CUDA work, which is what keeps cuBLAS from raising on CUDA ≥ 10.2; setting it 
 shell, would be fragile. Determinism's throughput cost was first put at ~25% here, from 15.1–16.7 s/epoch against fast
 mode's 12.6. **That figure is superseded and withdrawn:** it compared runs from different sessions on
 a drifting thermal state, which is the confound ADR-011 exists to name. Re-measured in two
-interleaved blocks (ADR-012), `deterministic: true` costs **13.8%**, and turning off
-`cudnn.benchmark` alone costs **0.6% — nothing detectable**.
+interleaved blocks (ADR-012) and compared *paired within block* so the drift cancels,
+`deterministic: true` costs **about 14%** — +10.8% and +17.3% in the two blocks, agreeing in sign,
+so the effect is directionally established with a real range of roughly 11–17% rather than a precise
+figure. Turning off `cudnn.benchmark` alone is **not resolvable**: its paired differences are −7.5%
+and +9.8%, opposite in sign, so the measurement cannot say which is faster. Free at this resolution,
+which is what ADR-012's recommendation rests on. Both were briefly quoted as pooled means (13.8% and
+0.6%); pooling discards the interleaving and those figures are withdrawn.
 
 The reason this matters beyond ticking off M2: it answers the Step 0 confound directly. Step 0 could
 not separate "the Energy Saver state changed the result" from "runs vary by 0.26 anyway", because
