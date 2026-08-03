@@ -185,7 +185,7 @@ launching module in each worker, so any script building one guards the call behi
 
 ---
 
-Built by [Udit Parihar](https://github.com/Uditp11).
+Built by Udit Parihar — [GitHub](https://github.com/Uditp11) · [LinkedIn](https://www.linkedin.com/in/udit-parihar-518186191/).
 
 ## License
 
