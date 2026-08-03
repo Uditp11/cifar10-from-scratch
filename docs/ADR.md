@@ -271,9 +271,10 @@ hedging both numbers equally — one difference survives the drift and the other
 The recommendation is unchanged either way. `benchmark: false` is adopted because it is free and
 removes the noise; what determinism costs on top of it does not bear on that.
 
-**Number-of-record:** the README's Reproducibility section carries **"about 14%"** for determinism,
-and nothing for `benchmark: false` beyond the fact that sweeps set it. A re-measurement must update
-this entry and that section together, or the two will drift apart.
+**Number-of-record:** the README's Reproducibility section carries **"roughly 11–17%"** for
+determinism — the range, not the midpoint, so that it cannot state more precision than this entry
+supports. It carries nothing for `benchmark: false` beyond the fact that sweeps set it. A
+re-measurement must update this entry and that section together, or the two will drift apart.
 
 An earlier estimate of ~25% for determinism is superseded — it compared runs from different sessions
 on a drifting thermal state, which is the confound this measurement was built to avoid.

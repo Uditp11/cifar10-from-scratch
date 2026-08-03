@@ -242,7 +242,7 @@ Bands are estimates from the literature, not promises. If a stage underperforms 
 | Risk | Impact | Mitigation |
 |---|---|---|
 | Accuracy plateaus below 94% | Primary metric misses | Sprint 5 has a debug checklist: verify normalization stats, LR range test, confirm no val leakage, check wd is not applied to BN/bias |
-| Bit-exact reproducibility unattainable on GPU | M2 misses | Measured in C8.1: `deterministic=true` **is** bit-exact here, including across a power-state change mid-run, at ~14% throughput cost. The default fast mode is not, and M2 states its measured spread instead of bounding it |
+| Bit-exact reproducibility unattainable on GPU | M2 misses | Measured in C8.1: `deterministic=true` **is** bit-exact here, including across a power-state change mid-run, at roughly 11–17% throughput cost. The default fast mode is not, and M2 states its measured spread instead of bounding it |
 | Test set used for model selection | Inflated, dishonest number | Sprint 1 carves a 5,000-image val split from train. Test set is touched **only** by `eval.py`, only at the end of a stage. Enforced by a test that asserts `Trainer` never receives the test loader |
 | Scope creep into a framework | Never ships | Non-goals in §3 are binding; new ideas go to `docs/BACKLOG.md` |
 | Long runs lost to a crash | Time waste | Checkpoint every epoch with resume from Sprint 3, not later |

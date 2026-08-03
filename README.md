@@ -1,21 +1,29 @@
 # CIFAR-10 from scratch
 
-A CIFAR-10 classifier in PyTorch where the ResNet, the LR schedule, the augmentations and the
-training loop are all written in this repository, and every recipe decision is backed by a logged
-ablation you can re-run.
+[![CI](https://github.com/Uditp11/cifar10-from-scratch/actions/workflows/ci.yml/badge.svg)](https://github.com/Uditp11/cifar10-from-scratch/actions/workflows/ci.yml)
 
-**96.06 ± 0.16% test top-1**, mean ± std over two seeds. ResNet-18 (11,173,962 parameters), 200
-epochs, one laptop GPU. No pretrained weights, no `timm`, no `torchvision.models`, no Lightning —
+An image classification project in computer vision: a deep convolutional neural network — ResNet-18 —
+implemented from scratch in PyTorch and trained on CIFAR-10, a standard machine learning benchmark of
+60,000 32×32 colour images across 10 categories. The residual blocks, the LR schedule, the
+augmentations and the training loop are all written in this repository, and every recipe decision is
+backed by a logged ablation you can re-run.
+
+**96.06% test top-1** — two seeds, 95.94 and 96.17. ResNet-18 (11,173,962 parameters), 200 epochs,
+one laptop GPU. No pretrained weights, no `timm`, no `torchvision.models`, no Lightning —
 `torchvision` supplies the CIFAR-10 download and `ToTensor`, nothing else.
 
 | | |
 |---|---|
-| Test top-1 | **96.06 ± 0.16%** (95.94, 96.17) |
-| Test top-5 | 99.73 / 99.75% |
-| Validation top-1 | 96.65 ± 0.04% |
-| val − test gap | 0.59 |
+| Test top-1 | **96.06%** (two seeds: 95.94, 96.17) |
+| Test top-5 | 99.74% (two seeds: 99.73, 99.75) |
+| Validation top-1 | 96.65% (two seeds: 96.62, 96.68) |
+| val − test gap | 0.59 points |
 | Training time | 43–49 min per run |
 | Hardware | RTX 4060 Laptop GPU, torch 2.11.0+cu128 |
+
+Two seeds is one degree of freedom, so these are reported as both values rather than as mean ± std —
+a standard deviation from n=2 carries almost no information, and this repository declines to state
+one anywhere (see ADR-012, which refuses a different number on the same grounds).
 
 Test accuracy was measured once, after the configuration was chosen and
 [written down first](docs/sprints/06-augmentation.md). `Trainer` takes a `(train, val)` 2-tuple, so
@@ -69,8 +77,9 @@ between those estimates is [recorded as open](docs/EXPERIMENTS.md) rather than r
 the convenient one. Mixup and RandAugment finished 0.03 apart — indistinguishable — so the one that
 composes more simply was chosen and the reasoning written down.
 
-Nine further ablations covering optimizer, schedule, warmup, weight decay, label smoothing and epoch
-budget are in [`docs/EXPERIMENTS.md`](docs/EXPERIMENTS.md), along with the results that came out
+Seven further ablations covering optimizer, schedule, warmup, weight decay, label smoothing and epoch
+budget are in [`docs/EXPERIMENTS.md`](docs/EXPERIMENTS.md) — the other seven of the eight-config
+Sprint 5 sweep, the eighth being the crop-and-flip row above — along with the results that came out
 against expectation and the claims this project has had to withdraw.
 
 ## Reproducibility
@@ -80,11 +89,13 @@ One testable claim per mode, both measured:
 - **`repro.deterministic: true` — runs reproduce bit-identically.** Not within a tolerance:
   identical `metrics.jsonl` scalars and identical weights. Three 10-epoch runs of
   `configs/repro_check.yaml` hashed to `866f747125539331`, one of them on battery under CPU
-  contention, straddling a power-source change mid-run at 2.1× the wall clock. Machine state does
-  not move the number in this mode. Costs about 14% throughput (ADR-012).
-- **Default fast mode — expect ~0.1–0.2 run-to-run at a fixed seed; 0.26 observed.**
-  `cudnn.benchmark` selects kernels by timing them, so the reduction order depends on machine state
-  that no seed controls. `repro.seed` does not make a fast-mode run reproduce. That is the noise
+  contention, straddling a power-source change mid-run at 2.1× the wall clock. Machine state did not
+  move the number in this mode (three runs; limits in ADR-012). Costs roughly **11–17%** throughput —
+  a range on one degree of freedom, not a point estimate (ADR-012).
+- **Default fast mode — run-to-run spread at a fixed seed is typically ~0.1–0.2, and 0.26 is the
+  largest seen.** `cudnn.benchmark` times candidate kernels and picks a winner, so it can select a
+  *different kernel* depending on machine state, and different kernels produce different
+  floating-point results. `repro.seed` does not make a fast-mode run reproduce. That is the noise
   floor the table above is read against, and it is a property of the mode rather than a defect.
 
 ## Known failure modes
@@ -130,6 +141,32 @@ lost that way. Two related habits for long unattended runs: stop the machine sle
 and note that a run killed outright is rendered `killed` in the table by `make_report.py`, since a
 process destroyed by `TerminateProcess` runs no `finally` and cannot label its own exit.
 
+## Tests and CI
+
+```bash
+pytest -m "not gpu" -q
+```
+
+**123 tests**, mirroring the `src/` tree, covering config validation and inheritance, the data split
+and normalization, augmentation correctness, model shapes and parameter counts, the training loop,
+checkpoint/resume, and the run manifest. All run on CPU in about 90 seconds; two more are marked
+`gpu` and deselected by default, and ten that need the real CIFAR-10 split skip themselves with a
+named reason when it isn't present. CI runs the suite plus `ruff check` and `ruff format --check` on
+Python 3.10 and 3.12.
+
+The pipeline earned its place by finding three real defects rather than by existing:
+
+- **A job-level hang.** `pytest` inherited the CIFAR-10 download, produced no output for nineteen
+  minutes, and was killed by the job timeout with nothing naming the cause. The fetch now runs in its
+  own bounded step.
+- **A bad fetch bound.** Each bound was then set from the previous run's measured progress — 5 minutes
+  reached 26.4%, 20 minutes reached 99.2% — rather than guessed.
+- **A test that passed on tolerance rather than correctness.** `test_resume_matches_uninterrupted_run`
+  compared a 4-epoch config against a 2-epoch one, and both cosine and warmup scale to that field, so
+  the two arms diverged *before* the resume it claimed to test. It passed on one platform on a ±0.5
+  tolerance over a noisy val set and failed on the other. Pinned to a constant LR, the resumed arm now
+  reproduces the straight arm's per-epoch losses exactly.
+
 ## Layout
 
 ```
@@ -145,6 +182,10 @@ docs/ARCHITECTURE.md the frozen signatures every component was built against
 `DataLoader(num_workers > 0)` uses spawn-based multiprocessing on Windows, which re-imports the
 launching module in each worker, so any script building one guards the call behind
 `if __name__ == "__main__":`.
+
+---
+
+Built by [Udit Parihar](https://github.com/Uditp11).
 
 ## License
 
